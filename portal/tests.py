@@ -169,3 +169,37 @@ class DashboardAccessTests(TestCase):
             self.assertNotContains(response,'secret-value-for-test')
             self.client.force_login(self.guardian)
             self.assertEqual(self.client.get('/superadmin/integrations/').status_code,404)
+
+    def test_student_crud_scoped_to_admin_school(self):
+        User=get_user_model()
+        admin=User.objects.create_user(username='student-admin',password='long-test-password')
+        Membership.objects.create(user=admin,school=self.school,role='admin')
+        outsider=Student.objects.create(school=self.other_school,nis='009',name='ANAK LUAR')
+        self.client.force_login(admin)
+        self.assertContains(self.client.get('/students/'),'ANAK SATU')
+        self.assertNotContains(self.client.get('/students/'),'ANAK LUAR')
+        self.assertEqual(self.client.get(f'/students/{outsider.pk}/edit/').status_code,404)
+        self.assertEqual(self.client.post('/students/new/',{'school':self.other_school.pk,'nis':'002','name':'NOT ALLOWED','active':'on'}).status_code,200)
+        self.assertFalse(Student.objects.filter(nis='002').exists())
+        self.assertEqual(self.client.post('/students/new/',{'school':self.school.pk,'nis':'0002','name':'Anak baru','active':'on'}).status_code,302)
+        self.assertTrue(Student.objects.filter(nis='0002').exists())
+        self.assertEqual(self.client.post(f'/students/{self.student.pk}/deactivate/').status_code,302)
+        self.student.refresh_from_db();self.assertFalse(self.student.active)
+    def test_guardian_cannot_manage_students(self):
+        self.client.force_login(self.guardian)
+        self.assertEqual(self.client.get('/students/').status_code,404)
+        self.assertEqual(self.client.get('/students/export.xlsx').status_code,404)
+        self.assertEqual(self.client.post(f'/students/{self.student.pk}/deactivate/').status_code,404)
+    def test_export_escapes_formulas_and_preserves_scope(self):
+        from io import BytesIO
+        from openpyxl import load_workbook
+        admin=get_user_model().objects.create_user(username='export-admin',password='long-test-password')
+        Membership.objects.create(user=admin,school=self.school,role='admin')
+        Student.objects.create(school=self.school,nis='00009',name='=1+1')
+        Student.objects.create(school=self.other_school,nis='00010',name='PRIVATE')
+        self.client.force_login(admin)
+        response=self.client.get('/students/export.xlsx')
+        self.assertEqual(response.status_code,200)
+        rows=list(load_workbook(BytesIO(response.content)).active.values)
+        self.assertIn(('SHB','00009',"'=1+1",'Aktif'),rows)
+        self.assertFalse(any('PRIVATE' in row for row in rows))
