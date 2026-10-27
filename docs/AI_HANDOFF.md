@@ -63,3 +63,6 @@ Admin dapat mengirim pesan individual kepada wali dengan membership aktif pada s
 
 ## Penegasan alur bulk
 User menegaskan prioritas upload XLSX → pilih semua/kelas/grup/individu → kirim massal. `portal/recipients.py` menyiapkan seleksi wali per kelas berbasis sekolah/kelas dengan deduplikasi akun; uji lintas sekolah lulus. Fungsi belum terhubung UI atau pengiriman, tidak memproses per-tagihan dan tidak mengirim email. Fitur bulk, grup, commit XLSX dan queue belum selesai.
+
+## Profil dan password awal
+Login Django membuat profil awal yang mewajibkan perubahan password sebelum masuk dashboard; halaman profil mendukung nama dan foto JPG/PNG tervalidasi, foto hanya dapat dibuka pemilik. Toggle lihat password memakai JS lokal. 36 tes SQLite lulus. Belum terintegrasi Supabase Auth, enkripsi foto di storage privat, audit, rate limit atau pengujian produksi. Akun yang dibuat di luar alur login perlu diuji pada integrasi selanjutnya.
