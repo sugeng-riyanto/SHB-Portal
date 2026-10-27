@@ -97,3 +97,16 @@ class BankAccount(models.Model):
     active = models.BooleanField(default=True)
     class Meta:
         constraints = [models.UniqueConstraint(fields=['school', 'bank_name', 'account_number'], name='unique_bank_account_per_school')]
+
+class Message(models.Model):
+    class Delivery(models.TextChoices):
+        PENDING='pending','Menunggu'
+        SENT='sent','Diterima server email'
+        FAILED='failed','Gagal'
+    school = models.ForeignKey(School, on_delete=models.PROTECT)
+    sender = models.ForeignKey(settings.AUTH_USER_MODEL,on_delete=models.PROTECT,related_name='sent_portal_messages')
+    recipient = models.ForeignKey(settings.AUTH_USER_MODEL,on_delete=models.PROTECT,related_name='received_portal_messages')
+    subject = models.CharField(max_length=160)
+    body = models.TextField(max_length=5000)
+    email_status = models.CharField(max_length=10,choices=Delivery.choices,default=Delivery.PENDING)
+    created_at = models.DateTimeField(auto_now_add=True)
