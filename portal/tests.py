@@ -451,3 +451,29 @@ class DashboardAccessTests(TestCase):
             response=self.client.post('/superadmin/integrations/smtp/',{'host':'smtp.gmail.com','port':'587','username':'school@example.test','from_email':'school@example.test','app_password':'secret'})
         self.assertContains(response,'belum disimpan')
         self.assertFalse(IntegrationConfig.objects.exists())
+
+    def test_superadmin_branding_and_local_assets(self):
+        root=get_user_model().objects.create_superuser(username='styled-admin',email='root@example.test',password='long-test-password')
+        self.client.force_login(root)
+        response=self.client.get('/admin/')
+        self.assertContains(response,'SHB Portal')
+        self.assertContains(response,'/static/portal/admin-shb.css')
+        self.assertContains(response,'/superadmin/integrations/')
+        self.assertNotContains(response,'cdn.')
+
+    def test_superadmin_secret_reveal_requires_password_and_scope(self):
+        from cryptography.fernet import Fernet
+        from unittest.mock import patch
+        from .models import IntegrationConfig
+        import json
+        key=Fernet.generate_key();root=get_user_model().objects.create_superuser(username='reveal-root',email='root@example.test',password='strong-password-987!')
+        IntegrationConfig.objects.create(provider='smtp',encrypted_secrets=Fernet(key).encrypt(json.dumps({'app_password':'private-secret-value'}).encode()))
+        with patch.dict('os.environ',{'SHB_INTEGRATION_ENCRYPTION_KEY':key.decode()}):
+            self.client.force_login(root)
+            self.assertNotContains(self.client.get('/superadmin/integrations/smtp/reveal/'),'private-secret-value')
+            self.assertNotContains(self.client.post('/superadmin/integrations/smtp/reveal/',{'password':'wrong'}),'private-secret-value')
+            response=self.client.post('/superadmin/integrations/smtp/reveal/',{'password':'strong-password-987!'})
+            self.assertContains(response,'private-secret-value')
+            self.assertIn('no-store',response['Cache-Control'])
+            self.client.force_login(self.guardian)
+            self.assertEqual(self.client.get('/superadmin/integrations/smtp/reveal/').status_code,404)
