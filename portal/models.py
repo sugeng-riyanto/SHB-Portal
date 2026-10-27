@@ -126,3 +126,14 @@ class SchoolUpdate(models.Model):
     class Meta:
         ordering = ['-published_at', '-pk']
     def __str__(self): return self.title
+
+class IntegrationConfig(models.Model):
+    class Provider(models.TextChoices):
+        SUPABASE = 'supabase', 'Supabase'
+        SMTP = 'smtp', 'Gmail SMTP'
+        MIDTRANS = 'midtrans', 'Midtrans'
+    provider = models.CharField(max_length=20, choices=Provider.choices, unique=True)
+    public_config = models.JSONField(default=dict)
+    encrypted_secrets = models.BinaryField(null=True, blank=True)
+    active = models.BooleanField(default=False)
+    updated_at = models.DateTimeField(auto_now=True)
