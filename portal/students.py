@@ -1,4 +1,5 @@
 from io import BytesIO
+import unicodedata
 from django import forms
 from django.contrib.auth.decorators import login_required
 from django.db.models import Q
@@ -95,6 +96,23 @@ from openpyxl import load_workbook
 from .imports import MAX_BYTES, MAX_EXPANDED, MAX_ROWS
 
 STUDENT_HEADERS=('nis','nama_murid')
+MAX_COLUMNS=10
+
+def has_unprintable(value):
+    """True bila teks memuat karakter kontrol atau tak terlihat (mis. ZWSP, tab, baris baru)."""
+    return any(unicodedata.category(character).startswith('C') for character in value)
+
+def nis_key(value):
+    """Kunci pembanding NIS: bentuk Unicode dinormalkan lalu dibandingkan tanpa huruf besar/kecil.
+
+    Tanpa ini, '0012' dan '\uff10\uff10\uff11\uff12' atau 'shb-7a' dan 'SHB-7A' lolos sebagai
+    murid berbeda, padahal bagi sekolah keduanya NIS yang sama.
+    """
+    return unicodedata.normalize('NFKC', value).casefold()
+
+def stored_nis_keys(school):
+    """Himpunan kunci NIS yang sudah tercatat di sekolah tersebut."""
+    return {nis_key(stored) for stored in Student.objects.filter(school=school).values_list('nis',flat=True).iterator()}
 
 @login_required
 def student_template(request):
@@ -117,23 +135,38 @@ def read_student_xlsx(data):
         book=load_workbook(BytesIO(data),read_only=True,data_only=False,keep_links=False)
         try:
             sheet=book.active
-            if sheet.max_row>MAX_ROWS+1 or sheet.max_column>10: raise ValueError('Maksimal 2.000 baris dan 10 kolom.')
-            rows=sheet.iter_rows();header=next(rows)
+            # Dimensi yang dideklarasikan berkas sering tidak akurat. Jangan dipakai untuk
+            # menentukan himpunan baris maupun batas jumlah: dimensi yang terlalu kecil
+            # membuat baris hilang diam-diam, yang terlalu besar menolak berkas kecil.
+            # Iterasi mengikuti isi berkas, sementara batas ukuran/ekspansi di atas tetap jaga.
+            sheet.reset_dimensions()
+            rows=sheet.iter_rows(min_row=1,min_col=1)
+            header=next(rows)
             if tuple(str(c.value or '').strip().lower() for c in header[:2]) != STUDENT_HEADERS:
                 raise ValueError('Kolom harus nis dan nama_murid sesuai template.')
-            result=[];seen=set()
+            if any(c.value not in (None,'') for c in header[2:]):
+                raise ValueError('File hanya boleh memuat kolom nis dan nama_murid.')
+            result=[];seen={};data_rows=0
             for number,cells in enumerate(rows,start=2):
                 if all(c.value is None for c in cells): continue
+                data_rows += 1
+                if data_rows > MAX_ROWS: raise ValueError('Maksimal 2.000 baris dan 10 kolom.')
+                errors=[]
+                if len(cells) > MAX_COLUMNS: errors.append('Baris memuat lebih dari 10 kolom.')
+                if any(c.value not in (None,'') for c in cells[2:]): errors.append('Hanya kolom nis dan nama_murid yang boleh berisi data.')
+                if any(c.data_type=='f' for c in cells): errors.append('Formula tidak diperbolehkan.')
                 values=[c.value for c in cells[:2]]
                 if len(values)<2: values += [None]*(2-len(values))
-                errors=[]
-                if any(c.data_type=='f' for c in cells): errors.append('Formula tidak diperbolehkan.')
                 nis=values[0].strip() if isinstance(values[0],str) else ''
                 name=values[1].strip() if isinstance(values[1],str) else ''
                 if not nis or len(nis)>32: errors.append('NIS wajib berupa teks maksimal 32 karakter.')
+                elif has_unprintable(nis): errors.append('NIS memuat karakter kontrol atau tak terlihat.')
                 if not name or len(name)>200: errors.append('Nama wajib berupa teks maksimal 200 karakter.')
-                if nis and nis in seen: errors.append('NIS duplikat di file.')
-                seen.add(nis)
+                elif has_unprintable(name): errors.append('Nama memuat karakter kontrol atau tak terlihat.')
+                if nis:
+                    key=nis_key(nis)
+                    if key in seen: errors.append('NIS duplikat di file.')
+                    seen.setdefault(key,number)
                 result.append({'row':number,'nis':nis,'name':name,'errors':errors})
             if not result: raise ValueError('File tidak berisi data murid.')
             return result
@@ -155,9 +188,9 @@ def student_import(request):
         else:
             try:
                 rows=read_student_xlsx(uploaded.read(MAX_BYTES+1))
-                existing=set(Student.objects.filter(school=school,nis__in=[r['nis'] for r in rows]).values_list('nis',flat=True))
+                existing=stored_nis_keys(school)
                 for row in rows:
-                    if row['nis'] in existing: row['errors'].append('NIS sudah ada di sekolah ini.')
+                    if row['nis'] and nis_key(row['nis']) in existing: row['errors'].append('NIS sudah ada di sekolah ini.')
                 context.update(rows=rows,school=school,can_commit=all(not row['errors'] for row in rows))
                 if context['can_commit']:
                     import secrets
@@ -184,7 +217,8 @@ def student_import_commit(request):
     try:
         with transaction.atomic():
             School.objects.select_for_update().get(pk=school.pk)
-            if Student.objects.filter(school=school,nis__in=[r['nis'] for r in batch['rows']]).exists():
+            wanted={nis_key(r['nis']) for r in batch['rows'] if r['nis']}
+            if any(stored in wanted for stored in stored_nis_keys(school)):
                 return HttpResponseBadRequest('NIS sudah ada. Unggah ulang untuk memeriksa data terbaru.')
             Student.objects.bulk_create([Student(school=school,nis=r['nis'],name=r['name']) for r in batch['rows']])
     except IntegrityError:
