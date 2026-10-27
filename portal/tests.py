@@ -406,3 +406,16 @@ class DashboardAccessTests(TestCase):
         self.client.force_login(self.guardian)
         self.assertEqual(self.client.get(f'/proofs/{proof.pk}/edit/').status_code,404)
         self.assertEqual(self.client.post(f'/proofs/{proof.pk}/withdraw/').status_code,400)
+
+    def test_xlsx_invalid_email_date_and_duplicate_reference(self):
+        from io import BytesIO
+        from openpyxl import load_workbook
+        from .imports import template_bytes, preview_xlsx
+        book=load_workbook(BytesIO(template_bytes()))
+        book.active.append(['001','8A','Student','bad-email','SPP',100,0,'','2026/27','Oktober','tomorrow','ref-1','',''])
+        book.active.append(['002','8A','Student2','parent@example.test','SPP',100,0,'','2026/27','Oktober','2026-11-01','ref-1','',''])
+        stream=BytesIO();book.save(stream)
+        rows=preview_xlsx(stream.getvalue())
+        self.assertTrue(any('email_wali' in e for e in rows[0]['errors']))
+        self.assertTrue(any('jatuh_tempo' in e for e in rows[0]['errors']))
+        self.assertTrue(any('duplikat' in e for e in rows[1]['errors']))
