@@ -88,3 +88,12 @@ class TransferProof(models.Model):
     reviewed_at = models.DateTimeField(null=True, blank=True)
     class Meta:
         constraints = [models.CheckConstraint(condition=Q(reported_amount__gt=0),name='proof_amount_positive')]
+
+class BankAccount(models.Model):
+    school = models.ForeignKey(School, on_delete=models.PROTECT)
+    bank_name = models.CharField(max_length=100)
+    account_name = models.CharField(max_length=200)
+    account_number = models.CharField(max_length=64)
+    active = models.BooleanField(default=True)
+    class Meta:
+        constraints = [models.UniqueConstraint(fields=['school', 'bank_name', 'account_number'], name='unique_bank_account_per_school')]
