@@ -384,3 +384,25 @@ class DashboardAccessTests(TestCase):
         self.assertContains(self.client.get('/'),'Terhubung dengan sekolah')
         self.client.cookies['django_language']='zh-hant'
         self.assertContains(self.client.get('/'),'與學校保持聯繫')
+
+    def test_proof_owner_can_edit_and_withdraw_before_verification(self):
+        from .models import TransferProof
+        proof=TransferProof.objects.create(invoice=Invoice.objects.get(),guardian=self.guardian,reported_amount=100000,transfer_date=date(2026,10,27),image=b'x',image_type='png')
+        self.client.force_login(self.guardian)
+        self.assertEqual(self.client.post(f'/proofs/{proof.pk}/edit/',{'amount':'120000','transfer_date':'2026-10-28'}).status_code,302)
+        proof.refresh_from_db();self.assertEqual(proof.reported_amount,120000)
+        self.assertEqual(self.client.post(f'/proofs/{proof.pk}/withdraw/').status_code,302)
+        proof.refresh_from_db();self.assertEqual(proof.status,'withdrawn')
+        self.assertEqual(self.client.get(f'/proofs/{proof.pk}/edit/').status_code,404)
+    def test_other_guardian_cannot_edit_proof_and_verified_is_immutable(self):
+        from .models import TransferProof
+        proof=TransferProof.objects.create(invoice=Invoice.objects.get(),guardian=self.guardian,reported_amount=100000,transfer_date=date(2026,10,27),image=b'x',image_type='png')
+        user=get_user_model().objects.create_user(username='other-wali',password='long-test-password')
+        Membership.objects.create(user=user,school=self.school,role='guardian');self.student.guardians.add(user)
+        self.client.force_login(user)
+        self.assertEqual(self.client.get(f'/proofs/{proof.pk}/edit/').status_code,404)
+        self.assertEqual(self.client.post(f'/proofs/{proof.pk}/withdraw/').status_code,404)
+        proof.status='verified';proof.save(update_fields=['status'])
+        self.client.force_login(self.guardian)
+        self.assertEqual(self.client.get(f'/proofs/{proof.pk}/edit/').status_code,404)
+        self.assertEqual(self.client.post(f'/proofs/{proof.pk}/withdraw/').status_code,400)
