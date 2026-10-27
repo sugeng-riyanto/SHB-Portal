@@ -8,6 +8,8 @@ from .models import Invoice, Membership
 def scoped_invoices(user):
     if not user.is_authenticated:
         return Invoice.objects.none()
+    if user.is_active and user.is_superuser:
+        return Invoice.objects.filter(enrollment__classroom__year__school_id=F('enrollment__student__school_id'))
     scope = Q(pk__in=[])
     for m in Membership.objects.filter(user=user, active=True):
         school = Q(enrollment__student__school_id=m.school_id,
@@ -23,6 +25,9 @@ def scoped_invoices(user):
 def aggregate_schools(user):
     if not user.is_authenticated:
         return []
+    if user.is_active and user.is_superuser:
+        from .models import School
+        return list(School.objects.values_list('id', flat=True))
     return list(Membership.objects.filter(user=user, active=True,
         role__in=[Membership.Role.PRINCIPAL, Membership.Role.FOUNDATION])
         .values_list('school_id', flat=True).distinct())
