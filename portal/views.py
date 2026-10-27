@@ -28,6 +28,16 @@ def home(request):
 def school_news(request):
     return render(request, 'portal/school_news.html', public_information())
 
+def dashboard_greeting(now=None):
+    from zoneinfo import ZoneInfo
+    from django.utils import timezone
+    now = now or timezone.now()
+    hour = now.astimezone(ZoneInfo('Asia/Jakarta')).hour
+    if 5 <= hour < 11: return 'Selamat pagi'
+    if 11 <= hour < 15: return 'Selamat siang'
+    if 15 <= hour < 18: return 'Selamat sore'
+    return 'Selamat malam'
+
 @login_required
 def dashboard(request):
     memberships = list(Membership.objects.filter(user=request.user, active=True).select_related('school'))
@@ -47,7 +57,7 @@ def dashboard(request):
     months = list(chart_query.annotate(month=TruncMonth('due_date')).values('month').annotate(count=Count('id')).order_by('month')[:24])
     maximum = max((m['count'] for m in months), default=1)
     for month in months: month['width'] = round(100 * month['count'] / maximum)
-    return render(request, 'portal/dashboard.html', {'memberships': memberships, 'invoices': invoices, 'summary': summary, 'months': months, 'is_super_admin': is_super_admin, 'is_school_admin': is_school_admin})
+    return render(request, 'portal/dashboard.html', {'memberships': memberships, 'invoices': invoices, 'summary': summary, 'months': months, 'is_super_admin': is_super_admin, 'is_school_admin': is_school_admin, 'greeting': dashboard_greeting(), 'display_name': request.user.get_full_name().strip() or request.user.get_username()})
 
 from django.http import HttpResponse, HttpResponseForbidden
 from .imports import ImportErrorDetail, preview_xlsx, template_bytes, MAX_BYTES

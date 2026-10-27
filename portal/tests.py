@@ -635,6 +635,98 @@ class DashboardAccessTests(TestCase):
         self.assertEqual(self.client.get(f'/receipts/{receipt.pk}/download.pdf').status_code,404)
         self.assertNotContains(self.client.get('/receipts/verify/',{'number':receipt.number,'code':receipt.verification_code}),'ANAK SATU')
 
+    def test_greeting_uses_jakarta_time_boundaries_and_escapes_name(self):
+        from datetime import datetime, timezone as dt_timezone
+        from .views import dashboard_greeting
+        for hour,expected in ((4,'Selamat malam'),(5,'Selamat pagi'),(10,'Selamat pagi'),(11,'Selamat siang'),(14,'Selamat siang'),(15,'Selamat sore'),(17,'Selamat sore'),(18,'Selamat malam')):
+            utc_hour=(hour-7)%24
+            self.assertEqual(dashboard_greeting(datetime(2026,10,27,utc_hour,tzinfo=dt_timezone.utc)),expected)
+        self.guardian.first_name='<Admin>';self.guardian.save()
+        self.client.force_login(self.guardian)
+        response=self.client.get('/dashboard/')
+        self.assertContains(response,'&lt;Admin&gt;')
+        self.assertNotContains(response,'<Admin>')
+
+    def test_school_announcement_workflow_and_qr_scope(self):
+        from .models import SchoolAnnouncement
+        admin=get_user_model().objects.create_user(username='announce-admin',password='long-test-password')
+        principal=get_user_model().objects.create_user(username='announce-principal',password='long-test-password')
+        Membership.objects.create(user=admin,school=self.school,role='admin')
+        Membership.objects.create(user=principal,school=self.school,role='principal')
+        self.client.force_login(admin)
+        response=self.client.post('/announcements/new/',{'school':self.school.pk,'title':'Activity','body':'First paragraph\n\nSecond paragraph','event_date':'2026-11-20','pdf_url':'https://example.test/info.pdf'})
+        self.assertEqual(response.status_code,302)
+        item=SchoolAnnouncement.objects.get()
+        self.assertEqual(self.client.post(f'/announcements/{item.pk}/approve/').status_code,404)
+        self.assertEqual(self.client.post(f'/announcements/{item.pk}/submit/').status_code,302)
+        self.assertEqual(self.client.get(f'/announcements/{item.pk}/edit/').status_code,400)
+        self.client.force_login(principal)
+        self.assertEqual(self.client.post(f'/announcements/{item.pk}/approve/').status_code,302)
+        item.refresh_from_db();self.assertEqual(item.status,'approved');self.assertEqual(item.approved_by,principal)
+        self.assertEqual(self.client.get(f'/announcements/verify/{item.approval_reference}/qr.png').status_code,200)
+        self.assertContains(self.client.get(f'/announcements/verify/{item.approval_reference}/'),'not a certified digital signature')
+        self.client.force_login(self.other)
+        self.assertEqual(self.client.get(f'/announcements/verify/{item.approval_reference}/').status_code,404)
+        self.assertEqual(self.client.post(f'/announcements/{item.pk}/delete/').status_code,404)
+    def test_announcement_rejects_non_https_pdf(self):
+        admin=get_user_model().objects.create_user(username='announce-admin2',password='long-test-password')
+        Membership.objects.create(user=admin,school=self.school,role='admin')
+        self.client.force_login(admin)
+        response=self.client.post('/announcements/new/',{'school':self.school.pk,'title':'Activity','body':'Text','event_date':'2026-11-20','pdf_url':'http://example.test/a.pdf'})
+        self.assertContains(response,'Use an HTTPS link.')
+
+    def test_announcement_actions_require_and_accept_csrf_tokens(self):
+        from django.test import Client, override_settings
+        from .models import SchoolAnnouncement
+        user=get_user_model().objects.create_user(username='csrf-announcement',password='test-password-987!')
+        Membership.objects.create(user=user,school=self.school,role='admin')
+        client=Client(enforce_csrf_checks=True);client.force_login(user)
+        origin='https://pv-ac9ad268c614-51b1306d-b202-4d34-b04b-346824493b23.style.dev'
+        with override_settings(CSRF_TRUSTED_ORIGINS=[origin]):
+            page=client.get('/announcements/new/',secure=True)
+            self.assertContains(page,'csrfmiddlewaretoken')
+            token=client.cookies['csrftoken'].value
+            fields={'school':self.school.pk,'title':'Example','body':'Example paragraph','event_date':'2026-11-20','pdf_url':''}
+            self.assertEqual(client.post('/announcements/new/',fields,secure=True,HTTP_ORIGIN=origin).status_code,403)
+            fields['csrfmiddlewaretoken']=token
+            self.assertEqual(client.post('/announcements/new/',fields,secure=True,HTTP_ORIGIN=origin).status_code,302)
+            announcement=SchoolAnnouncement.objects.get(title='Example')
+            self.assertEqual(client.post(f'/announcements/{announcement.pk}/submit/',{'csrfmiddlewaretoken':token},secure=True,HTTP_ORIGIN=origin).status_code,302)
+
+    def test_student_xlsx_template_preview_commit_and_duplicate(self):
+        from io import BytesIO
+        from django.core.files.uploadedfile import SimpleUploadedFile
+        from openpyxl import load_workbook
+        admin=get_user_model().objects.create_user(username='xlsx-students-admin',password='long-test-password')
+        Membership.objects.create(user=admin,school=self.school,role='admin')
+        self.client.force_login(admin)
+        template=self.client.get('/students/template.xlsx');self.assertEqual(template.status_code,200)
+        book=load_workbook(BytesIO(template.content));book.active.append(['00088','New student'])
+        stream=BytesIO();book.save(stream)
+        response=self.client.post('/students/import/',{'school':self.school.pk,'file':SimpleUploadedFile('students.xlsx',stream.getvalue())})
+        self.assertContains(response,'00088');self.assertFalse(Student.objects.filter(nis='00088').exists())
+        token=self.client.session['student_import_preview']['token']
+        self.assertEqual(self.client.post('/students/import/commit/',{'token':token}).status_code,302)
+        self.assertTrue(Student.objects.filter(school=self.school,nis='00088').exists())
+        self.assertEqual(self.client.post('/students/import/commit/',{'token':token}).status_code,400)
+        response=self.client.post('/students/import/',{'school':self.school.pk,'file':SimpleUploadedFile('students.xlsx',stream.getvalue())})
+        self.assertContains(response,'NIS sudah ada')
+    def test_student_import_scope_and_numeric_nis(self):
+        from io import BytesIO
+        from django.core.files.uploadedfile import SimpleUploadedFile
+        from openpyxl import load_workbook
+        admin=get_user_model().objects.create_user(username='xlsx-isolated',password='long-test-password')
+        Membership.objects.create(user=admin,school=self.school,role='admin')
+        self.client.force_login(admin)
+        book=load_workbook(BytesIO(self.client.get('/students/template.xlsx').content));book.active.append([123,'Student'])
+        stream=BytesIO();book.save(stream)
+        upload=lambda:SimpleUploadedFile('students.xlsx',stream.getvalue())
+        self.assertEqual(self.client.post('/students/import/',{'school':self.other_school.pk,'file':upload()}).status_code,404)
+        response=self.client.post('/students/import/',{'school':self.school.pk,'file':upload()})
+        self.assertContains(response,'NIS wajib berupa teks')
+        self.assertNotIn('student_import_preview',self.client.session)
+        self.client.force_login(self.guardian)
+        self.assertEqual(self.client.get('/students/template.xlsx').status_code,404)
     def test_cross_school_membership_cannot_edit_or_withdraw_proof(self):
         # Guardianship (student.guardians) is school-agnostic, so a linked guardian who is
         # only a member of another school can own a proof on a SHB invoice. School scope

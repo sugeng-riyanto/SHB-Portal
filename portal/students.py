@@ -82,3 +82,112 @@ def student_export(request):
     response['Content-Disposition']='attachment; filename="murid.xlsx"'
     response['Cache-Control']='private, no-store'
     return response
+
+# Import only the fields currently supported by the student model. Class and
+# guardian relationships require their own verified workflow.
+from datetime import timedelta
+from zipfile import BadZipFile, ZipFile
+from django.db import IntegrityError, transaction
+from django.http import HttpResponseBadRequest
+from django.utils import timezone
+from django.views.decorators.http import require_POST
+from openpyxl import load_workbook
+from .imports import MAX_BYTES, MAX_EXPANDED, MAX_ROWS
+
+STUDENT_HEADERS=('nis','nama_murid')
+
+@login_required
+def student_template(request):
+    if not admin_school_ids(request.user).exists(): raise Http404
+    book=Workbook();sheet=book.active;sheet.title='Murid';sheet.append(STUDENT_HEADERS)
+    sheet.column_dimensions['A'].width=24;sheet.column_dimensions['B'].width=36
+    sheet.column_dimensions['A'].number_format='@'
+    output=BytesIO();book.save(output)
+    response=HttpResponse(output.getvalue(),content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+    response['Content-Disposition']='attachment; filename="template-murid.xlsx"'
+    return response
+
+def read_student_xlsx(data):
+    if not data or len(data)>MAX_BYTES: raise ValueError('Ukuran file maksimal 2 MB.')
+    try:
+        with ZipFile(BytesIO(data)) as archive:
+            entries=archive.infolist()
+            if len(entries)>1000 or sum(entry.file_size for entry in entries)>MAX_EXPANDED:
+                raise ValueError('Isi file terlalu besar.')
+        book=load_workbook(BytesIO(data),read_only=True,data_only=False,keep_links=False)
+        try:
+            sheet=book.active
+            if sheet.max_row>MAX_ROWS+1 or sheet.max_column>10: raise ValueError('Maksimal 2.000 baris dan 10 kolom.')
+            rows=sheet.iter_rows();header=next(rows)
+            if tuple(str(c.value or '').strip().lower() for c in header[:2]) != STUDENT_HEADERS:
+                raise ValueError('Kolom harus nis dan nama_murid sesuai template.')
+            result=[];seen=set()
+            for number,cells in enumerate(rows,start=2):
+                if all(c.value is None for c in cells): continue
+                values=[c.value for c in cells[:2]]
+                if len(values)<2: values += [None]*(2-len(values))
+                errors=[]
+                if any(c.data_type=='f' for c in cells): errors.append('Formula tidak diperbolehkan.')
+                nis=values[0].strip() if isinstance(values[0],str) else ''
+                name=values[1].strip() if isinstance(values[1],str) else ''
+                if not nis or len(nis)>32: errors.append('NIS wajib berupa teks maksimal 32 karakter.')
+                if not name or len(name)>200: errors.append('Nama wajib berupa teks maksimal 200 karakter.')
+                if nis and nis in seen: errors.append('NIS duplikat di file.')
+                seen.add(nis)
+                result.append({'row':number,'nis':nis,'name':name,'errors':errors})
+            if not result: raise ValueError('File tidak berisi data murid.')
+            return result
+        finally: book.close()
+    except (BadZipFile, KeyError, IndexError, StopIteration, OSError, TypeError):
+        raise ValueError('File XLSX tidak valid.') from None
+
+@login_required
+def student_import(request):
+    schools=School.objects.filter(id__in=admin_school_ids(request.user))
+    if not schools.exists(): raise Http404
+    context={'schools':schools}
+    if request.method=='POST':
+        request.session.pop('student_import_preview',None)
+        school=get_object_or_404(schools,pk=request.POST.get('school'))
+        uploaded=request.FILES.get('file')
+        if not uploaded or uploaded.size>MAX_BYTES or not uploaded.name.lower().endswith('.xlsx'):
+            context['error']='Pilih file XLSX maksimal 2 MB.'
+        else:
+            try:
+                rows=read_student_xlsx(uploaded.read(MAX_BYTES+1))
+                existing=set(Student.objects.filter(school=school,nis__in=[r['nis'] for r in rows]).values_list('nis',flat=True))
+                for row in rows:
+                    if row['nis'] in existing: row['errors'].append('NIS sudah ada di sekolah ini.')
+                context.update(rows=rows,school=school,can_commit=all(not row['errors'] for row in rows))
+                if context['can_commit']:
+                    import secrets
+                    token=secrets.token_urlsafe(24)
+                    request.session['student_import_preview']={'school':school.pk,'rows':rows,'token':token,'created':timezone.now().isoformat()}
+                    context['commit_token']=token
+            except ValueError as exc: context['error']=str(exc)
+    return render(request,'portal/student_import.html',context)
+
+@login_required
+@require_POST
+def student_import_commit(request):
+    from datetime import datetime
+    import secrets
+    batch=request.session.get('student_import_preview')
+    if not batch or not secrets.compare_digest(str(request.POST.get('token','')),batch['token']):
+        return HttpResponseBadRequest('Preview tidak tersedia atau sudah digunakan.')
+    try: created=datetime.fromisoformat(batch['created'])
+    except (ValueError,TypeError): return HttpResponseBadRequest('Preview tidak valid.')
+    if timezone.now()-created > timedelta(minutes=20):
+        request.session.pop('student_import_preview',None)
+        return HttpResponseBadRequest('Preview kedaluwarsa. Unggah ulang.')
+    school=get_object_or_404(School,pk=batch['school'],pk__in=admin_school_ids(request.user))
+    try:
+        with transaction.atomic():
+            School.objects.select_for_update().get(pk=school.pk)
+            if Student.objects.filter(school=school,nis__in=[r['nis'] for r in batch['rows']]).exists():
+                return HttpResponseBadRequest('NIS sudah ada. Unggah ulang untuk memeriksa data terbaru.')
+            Student.objects.bulk_create([Student(school=school,nis=r['nis'],name=r['name']) for r in batch['rows']])
+    except IntegrityError:
+        return HttpResponseBadRequest('Data berubah atau duplikat. Unggah ulang untuk memeriksa kembali.')
+    request.session.pop('student_import_preview',None)
+    return redirect('student_list')

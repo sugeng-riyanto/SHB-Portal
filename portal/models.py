@@ -166,3 +166,20 @@ class PaymentReceipt(models.Model):
     verification_code = models.CharField(max_length=6)
     amount = models.PositiveBigIntegerField()
     issued_at = models.DateTimeField(auto_now_add=True)
+
+class SchoolAnnouncement(models.Model):
+    class Status(models.TextChoices):
+        DRAFT='draft','Draft'
+        SUBMITTED='submitted','Pending approval'
+        APPROVED='approved','Approved'
+    school=models.ForeignKey(School,on_delete=models.PROTECT)
+    title=models.CharField(max_length=180)
+    body=models.TextField(max_length=10000)
+    event_date=models.DateField()
+    pdf_url=models.URLField(max_length=500,blank=True)
+    status=models.CharField(max_length=12,choices=Status.choices,default=Status.DRAFT)
+    created_by=models.ForeignKey(settings.AUTH_USER_MODEL,on_delete=models.PROTECT,related_name='created_school_announcements')
+    approved_by=models.ForeignKey(settings.AUTH_USER_MODEL,on_delete=models.PROTECT,related_name='approved_school_announcements',null=True,blank=True)
+    approved_at=models.DateTimeField(null=True,blank=True)
+    approval_reference=models.UUIDField(null=True,blank=True,unique=True)
+    created_at=models.DateTimeField(auto_now_add=True)
