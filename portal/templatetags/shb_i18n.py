@@ -3,6 +3,7 @@ from django.utils.translation import get_language
 
 register = template.Library()
 TEXT = {
+'Selamat pagi':('Good morning','早安'),'Selamat siang':('Good afternoon','午安'),'Selamat sore':('Good afternoon','下午好'),'Selamat malam':('Good evening','晚安'),
 'Beranda':('Home','首頁'),'Dashboard':('Dashboard','儀表板'),'Masuk':('Sign in','登入'),'Keluar':('Sign out','登出'),'Profil':('Profile','個人資料'),'Kabar sekolah':('School news','學校消息'),'Super Admin':('Super Admin','超級管理員'),'Integrasi':('Integrations','整合設定'),
 'Selamat datang':('Welcome','歡迎'),'Masuk menggunakan akun sekolah Anda.':('Sign in with your school account.','請使用您的學校帳戶登入。'),'Tampilkan password':('Show password','顯示密碼'),'Sembunyikan password':('Hide password','隱藏密碼'),'Ubah password':('Change password','更改密碼'),'Simpan password':('Save password','儲存密碼'),'Profil saya':('My profile','我的個人資料'),'Simpan profil':('Save profile','儲存個人資料'),
 'Jika ini login pertama, buat password baru sebelum melanjutkan.':('If this is your first sign-in, create a new password before continuing.','首次登入時，請先設定新密碼再繼續。'),
