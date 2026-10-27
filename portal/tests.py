@@ -542,3 +542,44 @@ class DashboardAccessTests(TestCase):
         self.client.force_login(teacher)
         self.assertNotContains(self.client.get('/dashboard/'),f'/invoices/{invoice.pk}/proof/')
         self.assertEqual(self.client.get(f'/invoices/{invoice.pk}/proof/').status_code,404)
+
+    def test_payment_types_defaults_crud_and_scope(self):
+        from .models import PaymentType,ActivityEvent
+        admin=get_user_model().objects.create_user(username='types-admin',password='long-test-password')
+        Membership.objects.create(user=admin,school=self.school,role='admin')
+        self.client.force_login(admin)
+        self.assertEqual(self.client.post('/payment-types/defaults/',{'school':self.school.pk}).status_code,302)
+        self.client.post('/payment-types/defaults/',{'school':self.school.pk})
+        self.assertEqual(PaymentType.objects.filter(school=self.school).count(),5)
+        self.assertEqual(set(PaymentType.objects.filter(school=self.school).values_list('name',flat=True)),{'Monthly','ECA','Annual Fee','Stationery','Late Fee'})
+        self.assertEqual(self.client.post('/payment-types/new/',{'school':self.school.pk,'name':'Books','active':'on'}).status_code,302)
+        item=PaymentType.objects.get(school=self.school,name='Books')
+        self.assertEqual(self.client.post(f'/payment-types/{item.pk}/deactivate/').status_code,302)
+        item.refresh_from_db();self.assertFalse(item.active)
+        self.assertTrue(ActivityEvent.objects.filter(school=self.school,actor=admin).exists())
+        self.client.force_login(self.other)
+        self.assertEqual(self.client.get(f'/payment-types/{item.pk}/edit/').status_code,404)
+        self.assertNotContains(self.client.get('/activities/'),'types-admin')
+        self.client.force_login(self.guardian)
+        self.assertEqual(self.client.get('/payment-types/').status_code,404)
+        self.assertEqual(self.client.get('/activities/').status_code,404)
+
+    def test_dashboard_billing_timeline_respects_scope(self):
+        self.client.force_login(self.guardian)
+        self.assertContains(self.client.get('/dashboard/'),'Billing timeline')
+        self.assertContains(self.client.get('/dashboard/'),'Nov 2026')
+        self.client.force_login(self.other)
+        self.assertNotContains(self.client.get('/dashboard/'),'Nov 2026')
+
+    def test_invoice_export_never_exposes_other_school(self):
+        from io import BytesIO
+        from openpyxl import load_workbook
+        self.client.force_login(self.guardian)
+        response=self.client.get('/dashboard/export.xlsx')
+        self.assertEqual(response.status_code,200)
+        self.assertIn('no-store',response['Cache-Control'])
+        rows=list(load_workbook(BytesIO(response.content)).active.values)
+        self.assertTrue(any('ANAK SATU' in row for row in rows))
+        self.client.force_login(self.other)
+        rows=list(load_workbook(BytesIO(self.client.get('/dashboard/export.xlsx').content)).active.values)
+        self.assertFalse(any('ANAK SATU' in row for row in rows))
