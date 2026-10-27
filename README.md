@@ -86,3 +86,6 @@ Baca [konstitusi proyek](docs/PROJECT_CONSTITUTION.md), [matriks RBAC](docs/RBAC
 
 ### Akun demo lokal
 Setelah migrasi, jalankan `python manage.py seed_demo` untuk membuat akun uji pada SQLite development. Email login: `superadmin@shb.sch.id`, `admin@shb.sch.id`, `kepala@shb.sch.id`, `yayasan@shb.sch.id`, `walikelas@shb.sch.id`, dan `ortu@shb.sch.id`; password dummy: `DemoSHB!2026`. Perintah tidak mengubah akun yang sudah ada, tidak mengisi data murid, dan ditolak di lingkungan produksi maupun PostgreSQL. Jangan gunakan akun/password ini pada server publik.
+
+### Preview HTTPS: jika login menampilkan CSRF 403
+Set `DJANGO_CSRF_TRUSTED_ORIGINS` pada environment server ke origin HTTPS yang tepat, misalnya `https://preview.example.test` (tanpa `/accounts/login/` dan tanpa garis miring terakhir), dan pastikan host juga ada di `DJANGO_ALLOWED_HOSTS`. Restart aplikasi setelah mengganti environment, kemudian muat ulang halaman login. Jangan gunakan wildcard domain atau mematikan CSRF. Jika berada di belakang reverse proxy, pengaturan proxy tepercaya harus sesuai setup deployment; jangan aktifkan header forwarding dari jaringan yang tidak dipercaya.
