@@ -77,3 +77,10 @@ class DashboardAccessTests(TestCase):
         Membership.objects.create(user=user,school=self.school,role='admin')
         self.client.force_login(user)
         self.assertContains(self.client.get('/dashboard/'),'ANAK SATU')
+
+    def test_local_static_assets_and_viewport(self):
+        response = self.client.get('/')
+        self.assertContains(response, 'name="viewport"')
+        self.assertContains(response, '/static/portal/app.css')
+        self.assertContains(response, '/static/portal/app.js')
+        self.assertNotContains(response, 'cdn.')
