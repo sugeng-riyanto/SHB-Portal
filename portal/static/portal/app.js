@@ -27,3 +27,8 @@ document.querySelectorAll('[data-password-target]').forEach((button) => {
     button.textContent = show ? '◉ Sembunyikan password' : '👁 Tampilkan password';
   });
 });
+const languageSelect = document.getElementById('language-select');
+if (languageSelect) {
+  const current = document.documentElement.lang.toLowerCase();
+  languageSelect.value = current.startsWith('zh-hant') ? 'zh-hant' : current.startsWith('id') ? 'id' : 'en';
+}
