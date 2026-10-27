@@ -40,3 +40,40 @@ class DashboardAccessTests(TestCase):
     def test_logout_requires_post(self):
         self.client.force_login(self.guardian)
         self.assertEqual(self.client.get(reverse('logout')).status_code,405)
+
+    def test_principal_and_foundation_see_only_aggregate(self):
+        User = get_user_model()
+        for role in ('principal', 'foundation'):
+            user = User.objects.create_user(username=role,password='long-test-password')
+            Membership.objects.create(user=user,school=self.school,role=role)
+            self.client.force_login(user)
+            response = self.client.get('/dashboard/')
+            self.assertNotContains(response, 'ANAK SATU')
+            self.assertContains(response, '500000')
+    def test_wrong_school_principal_has_no_aggregate(self):
+        user = get_user_model().objects.create_user(username='otherprincipal',password='long-test-password')
+        Membership.objects.create(user=user,school=self.other_school,role='principal')
+        self.client.force_login(user)
+        self.assertNotContains(self.client.get('/dashboard/'), '500000')
+    def test_other_guardian_and_unassigned_teacher_cannot_see(self):
+        User = get_user_model()
+        for role in ('guardian', 'teacher'):
+            user = User.objects.create_user(username='unassigned-'+role,password='long-test-password')
+            Membership.objects.create(user=user,school=self.school,role=role)
+            self.client.force_login(user)
+            self.assertNotContains(self.client.get('/dashboard/'), 'ANAK SATU')
+    def test_cross_school_invalid_enrollment_is_not_visible(self):
+        year = AcademicYear.objects.create(school=self.other_school,label='2026/27')
+        other_class = Classroom.objects.create(year=year,name='9A')
+        other_class.teachers.add(self.teacher)
+        bad = Enrollment.objects.create(student=self.student,classroom=other_class)
+        Invoice.objects.create(enrollment=bad,reference='BAD',description='CROSS SCHOOL LEAK',amount=999,due_date=date(2026,11,1))
+        self.client.force_login(self.guardian)
+        self.assertNotContains(self.client.get('/dashboard/'),'CROSS SCHOOL LEAK')
+        self.client.force_login(self.teacher)
+        self.assertNotContains(self.client.get('/dashboard/'),'CROSS SCHOOL LEAK')
+    def test_admin_sees_only_own_school(self):
+        user = get_user_model().objects.create_user(username='adminshb',password='long-test-password')
+        Membership.objects.create(user=user,school=self.school,role='admin')
+        self.client.force_login(user)
+        self.assertContains(self.client.get('/dashboard/'),'ANAK SATU')
