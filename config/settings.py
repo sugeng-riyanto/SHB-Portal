@@ -20,12 +20,10 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 # See https://docs.djangoproject.com/en/5.2/howto/deployment/checklist/
 
 # SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = 'django-insecure-0!d^myc9j^c+-2lxtsjgs!6q*$l_-=+h1*@r0uce(4^iv7-4(#'
+# Set below from environment.
 
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = True
-
-ALLOWED_HOSTS = []
+# DEBUG and allowed hosts are set below from environment.
 
 
 # Application definition
@@ -142,3 +140,24 @@ if os.environ.get('POSTGRES_HOST'):
         'PORT': os.environ.get('POSTGRES_PORT', '5432'),
         'OPTIONS': {'sslmode': 'require'},
     }
+
+# Explicit production profile. Only enable after HTTPS and trusted proxy are configured.
+PRODUCTION = os.environ.get('SHB_ENV', 'development') == 'production'
+if PRODUCTION:
+    from django.core.exceptions import ImproperlyConfigured
+    if DEBUG:
+        raise ImproperlyConfigured('DEBUG must be disabled in production.')
+    if SECRET_KEY == 'development-only-not-for-production' or len(SECRET_KEY) < 50:
+        raise ImproperlyConfigured('Set a strong DJANGO_SECRET_KEY in production.')
+    if not os.environ.get('DJANGO_ALLOWED_HOSTS') or '*' in ALLOWED_HOSTS:
+        raise ImproperlyConfigured('Set explicit DJANGO_ALLOWED_HOSTS in production.')
+    SESSION_COOKIE_SECURE = True
+    CSRF_COOKIE_SECURE = True
+    SECURE_SSL_REDIRECT = True
+    SECURE_HSTS_SECONDS = int(os.environ.get('DJANGO_HSTS_SECONDS', '0'))
+    SECURE_HSTS_INCLUDE_SUBDOMAINS = False
+    SECURE_HSTS_PRELOAD = False
+    if os.environ.get('DJANGO_TRUST_PROXY_HTTPS') == '1':
+        SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
+SECURE_CONTENT_TYPE_NOSNIFF = True
+X_FRAME_OPTIONS = 'DENY'
