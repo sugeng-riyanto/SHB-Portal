@@ -525,3 +525,20 @@ class DashboardAccessTests(TestCase):
         self.assertContains(response,'aria-controls="main-navigation"')
         self.assertContains(response,'id="main-navigation"')
         self.assertContains(response,'/static/portal/app.js')
+
+    def test_demo_data_works_for_guardian_and_hides_upload_for_teacher(self):
+        from io import StringIO
+        from django.core.management import call_command
+        from .models import Invoice
+        call_command('seed_demo',stdout=StringIO())
+        call_command('seed_demo_data',stdout=StringIO())
+        call_command('seed_demo_data',stdout=StringIO())
+        invoice=Invoice.objects.get(reference='SHB-DEMO-INV-001')
+        guardian=get_user_model().objects.get(username='ortu@shb.sch.id')
+        teacher=get_user_model().objects.get(username='walikelas@shb.sch.id')
+        self.client.force_login(guardian)
+        self.assertContains(self.client.get('/dashboard/'),f'/invoices/{invoice.pk}/proof/')
+        self.assertEqual(self.client.get(f'/invoices/{invoice.pk}/proof/').status_code,200)
+        self.client.force_login(teacher)
+        self.assertNotContains(self.client.get('/dashboard/'),f'/invoices/{invoice.pk}/proof/')
+        self.assertEqual(self.client.get(f'/invoices/{invoice.pk}/proof/').status_code,404)
