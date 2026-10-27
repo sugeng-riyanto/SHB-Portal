@@ -91,5 +91,14 @@ Tiga perubahan yang diuji:
 
 Berikutnya: pindahkan pengujian ke instance PostgreSQL/Supabase terisolasi dengan TLS nyata, tambah pengujian konkurensi di atas dua penulis, dan pertimbangkan opsi reset terkontrol pada `seed_demo`.
 
+## Merge origin/main dan penyatuan seed_demo — 27 Oktober 2026
+Branch `freebuff/ac9ad268c61424b55ab6a2ea`. Pekerjaan lokal di-commit lebih dulu (`7a796e6`, identitas repo lokal `Codebuff Agent <noreply@codebuff.com>`), lalu main (`deb52f5`) di-merge. `git pull` polos tidak bisa dipakai: branch ini tanpa upstream, dan perubahan lokal menutupi `README.md`, `portal/tests.py` serta `portal/management/`. Konflik hanya pada `seed_demo.py` (add/add) dan `portal/tests.py`; `config/settings.py`, `.env.example`, `README.md`, `home.html` dan `app.css` merge otomatis.
+
+Keputusan penyatuan: satu perintah `seed_demo` yang membuat enam akun demo bawaan main (`superadmin@`, `admin@`, `kepala@`, `yayasan@`, `walikelas@`, `ortu@shb.sch.id`, password `DemoSHB!2026`, tidak menimpa akun atau password yang sudah ada) ditambah data contoh murid, kelas, enrollment, tagihan dan rekening milik branch ini. Guard main dipertahankan: perintah menolak berjalan bila `SHB_ENV=production` atau database bukan SQLite. Nama sekolah memakai `Sekolah Harapan Bangsa (contoh)` agar database pengembangan yang sudah ada dipakai ulang tanpa duplikasi sekolah; main memakai `(Demo)` dan tidak ada tes yang bergantung pada nama itu. Bagian README "Akun demo lokal" diperbarui karena perintah sekarang juga mengisi data murid.
+
+Hasil uji setelah merge: 36 tes Django lulus pada SQLite (2 skip: tes konkurensi) dan pada PostgreSQL 16.2 (4 skip: empat tes seed karena guard SQLite-only), serta 5 tes domain lulus. `migrate` tidak menerapkan migrasi baru dan `seed_demo` idempoten pada database lama (hanya menambahkan enam akun).
+
+Risiko: (1) tes seed kini tidak berjalan pada PostgreSQL karena guard SQLite-only, jadi regresi perintah hanya tertangkap pada SQLite; (2) database pengembangan lama menyisakan tiga akun lama `admin`/`walikelas`/`ortu` yang tidak lagi dibuat perintah ini; (3) guard memakai `settings.DATABASES['default']['ENGINE']`, perlu ditinjau bila engine berubah. Berikutnya: opsi bersih-bersih data contoh lama dan uji pada Supabase terisolasi.
+
 ## Korespondensi awal
 Admin dapat mengirim pesan individual kepada wali dengan membership aktif pada sekolahnya; pesan tersimpan dalam inbox wali dan SMTP opsional mencatat status accepted/failed. Email default dinonaktifkan, konfigurasi SMTP via environment; tidak ada retry otomatis untuk kegagalan ambigu. 29 tes Django SQLite lulus termasuk outbox simulasi dan isolasi sekolah. Belum ada preview/konfirmasi kedua, bulk, pembatasan kecepatan, validasi email terverifikasi, antrian, audit, Supabase Auth/RLS, pelindungan operasional dan uji SMTP nyata. Belum siap data asli.

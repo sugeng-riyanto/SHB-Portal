@@ -272,7 +272,40 @@ class DashboardAccessTests(TestCase):
         self.client.force_login(self.teacher)
         self.assertEqual(self.client.get('/messages/compose/').status_code,404)
 
+    def test_seed_demo_is_idempotent_and_cannot_run_on_production(self):
+        from django.db import connection
+        if connection.vendor != 'sqlite':
+            self.skipTest('seed_demo diizinkan hanya pada SQLite development.')
+        from io import StringIO
+        from django.core.management import call_command
+        from django.core.management.base import CommandError
+        from django.test import override_settings
+        out=StringIO();call_command('seed_demo',stdout=out)
+        user=get_user_model().objects.get(username='ortu@shb.sch.id')
+        self.assertTrue(user.check_password('DemoSHB!2026'))
+        user.set_password('different-password');user.save()
+        call_command('seed_demo',stdout=StringIO())
+        user.refresh_from_db();self.assertTrue(user.check_password('different-password'))
+        with override_settings(PRODUCTION=True):
+            with self.assertRaises(CommandError): call_command('seed_demo',stdout=StringIO())
+
+    def test_csrf_login_trusted_origin_and_untrusted_origin(self):
+        from django.test import Client, override_settings
+        user = get_user_model().objects.create_user(username='csrfuser',password='long-test-password')
+        client = Client(enforce_csrf_checks=True)
+        with override_settings(CSRF_TRUSTED_ORIGINS=['https://preview.example.test']):
+            client.get('/accounts/login/')
+            token = client.cookies['csrftoken'].value
+            response=client.post('/accounts/login/',{'username':user.username,'password':'long-test-password','csrfmiddlewaretoken':token},HTTP_ORIGIN='https://untrusted.example.test')
+            self.assertEqual(response.status_code,403)
+            response=client.post('/accounts/login/',{'username':user.username,'password':'long-test-password','csrfmiddlewaretoken':token},HTTP_ORIGIN='https://preview.example.test')
+            self.assertEqual(response.status_code,302)
+
 class SeedDemoCommandTests(TestCase):
+    def setUp(self):
+        from django.db import connection
+        if connection.vendor != 'sqlite':
+            self.skipTest('seed_demo diizinkan hanya pada SQLite development.')
     def seed(self, **kwargs):
         from io import StringIO
         from django.core.management import call_command
@@ -284,20 +317,21 @@ class SeedDemoCommandTests(TestCase):
         self.assertTrue(School.objects.filter(name='Sekolah Harapan Bangsa (contoh)').exists())
         self.assertEqual(Student.objects.count(),3)
         self.assertEqual(Invoice.objects.count(),3)
-        self.assertEqual(Membership.objects.count(),3)
+        # Lima peran dari enam akun demo; superadmin tidak memakai membership.
+        self.assertEqual(Membership.objects.count(),5)
         self.assertEqual(Enrollment.objects.count(),3)
-        self.client.force_login(get_user_model().objects.get(username='ortu'))
+        self.client.force_login(get_user_model().objects.get(username='ortu@shb.sch.id'))
         dashboard=self.client.get('/dashboard/')
         self.assertContains(dashboard,'Murid Contoh 1')
         self.assertNotContains(dashboard,'Murid Contoh 3')
-        self.client.force_login(get_user_model().objects.get(username='admin'))
+        self.client.force_login(get_user_model().objects.get(username='admin@shb.sch.id'))
         self.assertContains(self.client.get('/dashboard/'),'Murid Contoh 3')
         self.assertIn('sudah lengkap',self.seed())
         counts=(School.objects.count(),Student.objects.count(),Invoice.objects.count(),Membership.objects.count(),Enrollment.objects.count())
-        self.assertEqual(counts,(1,3,3,3,3))
+        self.assertEqual(counts,(1,3,3,5,3))
     def test_seed_uses_given_password(self):
         self.seed(password='another-demo-password')
-        self.assertTrue(self.client.login(username='ortu',password='another-demo-password'))
+        self.assertTrue(self.client.login(username='ortu@shb.sch.id',password='another-demo-password'))
     def test_seed_refuses_production(self):
         from io import StringIO
         from django.core.management import call_command

@@ -124,7 +124,11 @@ DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 import os
 SECRET_KEY = os.environ.get('DJANGO_SECRET_KEY', 'development-only-not-for-production')
 DEBUG = os.environ.get('DJANGO_DEBUG', '0') == '1'
-ALLOWED_HOSTS = [h for h in os.environ.get('DJANGO_ALLOWED_HOSTS', 'localhost,127.0.0.1,testserver').split(',') if h]
+ALLOWED_HOSTS = [h.strip() for h in os.environ.get('DJANGO_ALLOWED_HOSTS', 'localhost,127.0.0.1,testserver').split(',') if h.strip()]
+CSRF_TRUSTED_ORIGINS = [origin.strip() for origin in os.environ.get('DJANGO_CSRF_TRUSTED_ORIGINS', '').split(',') if origin.strip()]
+# Temporary preview origin; not trusted in production.
+if os.environ.get('SHB_ENV', 'development') != 'production':
+    CSRF_TRUSTED_ORIGINS.append('https://pv-ac9ad268c614-51b1306d-b202-4d34-b04b-346824493b23.style.dev')
 INSTALLED_APPS += ['portal']
 LOGIN_URL = '/accounts/login/'
 LOGIN_REDIRECT_URL = '/dashboard/'

@@ -1,19 +1,23 @@
-"""Seed synthetic demo data so the local preview can be rebuilt from scratch.
+"""Seed synthetic demo data for the local preview.
 
 All values here are fabricated. Never load real student, guardian or payment data with
-this command, and never expose the demo accounts outside a development machine.
+this command, and never expose these accounts outside a development machine.
 
     python manage.py migrate
     python manage.py seed_demo
 
-Running it again only fills in what is missing, so it is safe to repeat after a
-worktree restore. It refuses to run when settings.PRODUCTION is active (SHB_ENV=production).
+Creates demo accounts that can sign in, together with example classes, students,
+invoices and a bank account so the preview has something to render. Running it again
+only fills in what is missing: an existing user keeps its current password and nothing
+already stored is overwritten. The command refuses to run unless the database is a
+SQLite development database and settings.PRODUCTION is off.
 """
 from datetime import date
 
 from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.core.management.base import BaseCommand, CommandError
+from django.db import transaction
 
 from portal.models import (
     AcademicYear,
@@ -28,22 +32,25 @@ from portal.models import (
 
 DEMO_SCHOOL_NAME = 'Sekolah Harapan Bangsa (contoh)'
 DEMO_YEAR_LABEL = '2026/2027'
-DEMO_PASSWORD = 'shb-preview-2026'
-DEMO_USERS = (
-    {'username': 'admin', 'first_name': 'Admin', 'email': 'admin@contoh.id',
-     'role': Membership.Role.ADMIN, 'admin_site': True},
-    {'username': 'walikelas', 'first_name': 'Wali Kelas', 'email': 'wali7a@contoh.id',
-     'role': Membership.Role.TEACHER, 'admin_site': False},
-    {'username': 'ortu', 'first_name': 'Orang Tua', 'email': 'ortu@contoh.id',
-     'role': Membership.Role.GUARDIAN, 'admin_site': False},
+DEMO_PASSWORD = 'DemoSHB!2026'
+# (username, role): role None means the portal superuser.
+DEMO_ACCOUNTS = (
+    ('superadmin@shb.sch.id', None),
+    ('admin@shb.sch.id', Membership.Role.ADMIN),
+    ('kepala@shb.sch.id', Membership.Role.PRINCIPAL),
+    ('yayasan@shb.sch.id', Membership.Role.FOUNDATION),
+    ('walikelas@shb.sch.id', Membership.Role.TEACHER),
+    ('ortu@shb.sch.id', Membership.Role.GUARDIAN),
 )
 DEMO_CLASSES = (
-    {'name': '7A', 'teachers': ('walikelas',)},
-    {'name': '10N', 'teachers': ('walikelas',)},
+    {'name': '7A', 'teachers': ('walikelas@shb.sch.id',)},
+    {'name': '10N', 'teachers': ('walikelas@shb.sch.id',)},
 )
 DEMO_STUDENTS = (
-    {'nis': '2026001', 'name': 'Murid Contoh 1', 'classroom': '7A', 'guardians': ('ortu',)},
-    {'nis': '2026002', 'name': 'Murid Contoh 2', 'classroom': '7A', 'guardians': ('ortu',)},
+    {'nis': '2026001', 'name': 'Murid Contoh 1', 'classroom': '7A',
+     'guardians': ('ortu@shb.sch.id',)},
+    {'nis': '2026002', 'name': 'Murid Contoh 2', 'classroom': '7A',
+     'guardians': ('ortu@shb.sch.id',)},
     {'nis': '2026003', 'name': 'Murid Contoh 3', 'classroom': '10N', 'guardians': ()},
 )
 DEMO_INVOICES = (
@@ -59,91 +66,101 @@ DEMO_BANK_ACCOUNT = {'bank_name': 'Bank Contoh A', 'account_name': 'Yayasan SHB'
 
 
 class Command(BaseCommand):
-    help = 'Membuat data contoh sintetis untuk preview lokal; aman dijalankan berulang.'
+    help = 'Create local demo accounts and example school data; SQLite development only.'
 
     def add_arguments(self, parser):
         parser.add_argument(
             '--password',
             default=DEMO_PASSWORD,
-            help='Kata sandi akun contoh yang baru dibuat. Gunakan kata sandi demo saja.',
+            help='Kata sandi untuk akun contoh yang baru dibuat. Gunakan kata sandi demo saja.',
         )
 
     def handle(self, *args, **options):
-        if settings.PRODUCTION:
-            raise CommandError('seed_demo tidak dijalankan pada SHB_ENV=production.')
+        engine = settings.DATABASES['default']['ENGINE']
+        if settings.PRODUCTION or engine != 'django.db.backends.sqlite3':
+            raise CommandError(
+                'Demo accounts are permitted only on a development SQLite database.')
         created = []
         User = get_user_model()
 
-        school, _ = School.objects.get_or_create(name=DEMO_SCHOOL_NAME)
-        year, _ = AcademicYear.objects.get_or_create(school=school, label=DEMO_YEAR_LABEL)
+        with transaction.atomic():
+            school, is_new = School.objects.get_or_create(name=DEMO_SCHOOL_NAME)
+            if is_new:
+                created.append(f'sekolah {school.name}')
+            year, is_new = AcademicYear.objects.get_or_create(
+                school=school, label=DEMO_YEAR_LABEL)
+            if is_new:
+                created.append(f'tahun ajaran {year.label}')
 
-        users = {}
-        for spec in DEMO_USERS:
-            user, is_new = User.objects.get_or_create(
-                username=spec['username'],
-                defaults={'email': spec['email'], 'first_name': spec['first_name']},
+            users = {}
+            for username, role in DEMO_ACCOUNTS:
+                # Never overwrite an existing user or its password.
+                user, is_new = User.objects.get_or_create(
+                    username=username, defaults={'email': username})
+                if is_new:
+                    user.set_password(options['password'])
+                    if role is None:
+                        user.is_staff = True
+                        user.is_superuser = True
+                    user.save()
+                    created.append(f'akun {username}')
+                else:
+                    self.stdout.write(f'{username}: sudah ada; tidak diubah')
+                users[username] = user
+                if role and Membership.objects.get_or_create(
+                        user=user, school=school, role=role)[1]:
+                    created.append(f'peran {username}/{role}')
+
+            classrooms = {}
+            for spec in DEMO_CLASSES:
+                classroom, is_new = Classroom.objects.get_or_create(
+                    year=year, name=spec['name'])
+                if is_new:
+                    created.append(f'kelas {spec["name"]}')
+                for username in spec['teachers']:
+                    classroom.teachers.add(users[username])
+                classrooms[spec['name']] = classroom
+
+            students = {}
+            for spec in DEMO_STUDENTS:
+                student, is_new = Student.objects.get_or_create(
+                    school=school, nis=spec['nis'], defaults={'name': spec['name']})
+                if is_new:
+                    created.append(f'murid {spec["nis"]}')
+                for username in spec['guardians']:
+                    student.guardians.add(users[username])
+                students[spec['nis']] = student
+
+            enrollments = {}
+            for spec in DEMO_STUDENTS:
+                enrollment, is_new = Enrollment.objects.get_or_create(
+                    student=students[spec['nis']], classroom=classrooms[spec['classroom']])
+                enrollments[spec['nis']] = enrollment
+                if is_new:
+                    created.append(f'enrollment {spec["nis"]}')
+
+            for spec in DEMO_INVOICES:
+                _, is_new = Invoice.objects.get_or_create(
+                    reference=spec['reference'],
+                    defaults={
+                        'enrollment': enrollments[spec['nis']],
+                        'description': spec['description'],
+                        'amount': spec['amount'],
+                        'due_date': spec['due_date'],
+                        'virtual_account': spec['virtual_account'],
+                    },
+                )
+                if is_new:
+                    created.append(f'tagihan {spec["reference"]}')
+
+            _, is_new = BankAccount.objects.get_or_create(
+                school=school,
+                bank_name=DEMO_BANK_ACCOUNT['bank_name'],
+                account_number=DEMO_BANK_ACCOUNT['account_number'],
+                defaults={'account_name': DEMO_BANK_ACCOUNT['account_name']},
             )
             if is_new:
-                user.set_password(options['password'])
-                user.is_staff = spec['admin_site']
-                user.is_superuser = spec['admin_site']
-                user.save()
-                created.append(f'user {spec["username"]}')
-            users[spec['username']] = user
-            _, is_new = Membership.objects.get_or_create(
-                user=user, school=school, role=spec['role'])
-            if is_new:
-                created.append(f'membership {spec["username"]}/{spec["role"]}')
-
-        classrooms = {}
-        for spec in DEMO_CLASSES:
-            classroom, is_new = Classroom.objects.get_or_create(year=year, name=spec['name'])
-            if is_new:
-                created.append(f'kelas {spec["name"]}')
-            for username in spec['teachers']:
-                classroom.teachers.add(users[username])
-            classrooms[spec['name']] = classroom
-
-        students = {}
-        for spec in DEMO_STUDENTS:
-            student, is_new = Student.objects.get_or_create(
-                school=school, nis=spec['nis'], defaults={'name': spec['name']})
-            if is_new:
-                created.append(f'murid {spec["nis"]}')
-            for username in spec['guardians']:
-                student.guardians.add(users[username])
-            students[spec['nis']] = student
-
-        enrollments = {}
-        for spec in DEMO_STUDENTS:
-            enrollment, is_new = Enrollment.objects.get_or_create(
-                student=students[spec['nis']], classroom=classrooms[spec['classroom']])
-            enrollments[spec['nis']] = enrollment
-            if is_new:
-                created.append(f'enrollment {spec["nis"]}')
-
-        for spec in DEMO_INVOICES:
-            _, is_new = Invoice.objects.get_or_create(
-                reference=spec['reference'],
-                defaults={
-                    'enrollment': enrollments[spec['nis']],
-                    'description': spec['description'],
-                    'amount': spec['amount'],
-                    'due_date': spec['due_date'],
-                    'virtual_account': spec['virtual_account'],
-                },
-            )
-            if is_new:
-                created.append(f'tagihan {spec["reference"]}')
-
-        _, is_new = BankAccount.objects.get_or_create(
-            school=school,
-            bank_name=DEMO_BANK_ACCOUNT['bank_name'],
-            account_number=DEMO_BANK_ACCOUNT['account_number'],
-            defaults={'account_name': DEMO_BANK_ACCOUNT['account_name']},
-        )
-        if is_new:
-            created.append('rekening bank contoh')
+                created.append('rekening bank contoh')
 
         if created:
             self.stdout.write(self.style.SUCCESS(
@@ -151,11 +168,12 @@ class Command(BaseCommand):
             for item in created:
                 self.stdout.write(f'  + {item}')
         else:
-            self.stdout.write(self.style.SUCCESS('Data contoh sudah lengkap; tidak ada perubahan.'))
+            self.stdout.write(self.style.SUCCESS(
+                'Data contoh sudah lengkap; tidak ada perubahan.'))
         self.stdout.write(
-            f'Sekolah: {school.name} · tahun {year.label} · '
+            f'{school.name} · tahun {year.label} · '
             f'{Student.objects.filter(school=school).count()} murid · '
             f'{Invoice.objects.filter(enrollment__student__school=school).count()} tagihan')
         self.stdout.write(
-            'Akun contoh: admin, walikelas, ortu. '
-            'Kata sandi mengikuti opsi --password (lihat --help).')
+            'Akun contoh: ' + ', '.join(username for username, _ in DEMO_ACCOUNTS) + '.')
+        self.stdout.write('Demo only: data sintetis untuk preview lokal, bukan data sekolah.')

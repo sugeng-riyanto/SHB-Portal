@@ -84,3 +84,9 @@ Untuk SMTP, isi environment server sesuai panduan, lalu aktifkan `SHB_EMAIL_ENAB
 - Konfigurasi HTTPS, hosting static files (`collectstatic`), proses server dan uji staging sebelum rilis.
 
 Baca [konstitusi proyek](docs/PROJECT_CONSTITUTION.md), [matriks RBAC](docs/RBAC_MATRIX.md), [pelindungan data](docs/PRIVACY_PDP.md), [release gates](docs/RELEASE_GATES.md), dan [status pekerjaan](docs/AI_HANDOFF.md).
+
+### Akun demo lokal
+Setelah migrasi, jalankan `python manage.py seed_demo` untuk membuat akun uji pada SQLite development. Email login: `superadmin@shb.sch.id`, `admin@shb.sch.id`, `kepala@shb.sch.id`, `yayasan@shb.sch.id`, `walikelas@shb.sch.id`, dan `ortu@shb.sch.id`; password dummy: `DemoSHB!2026`. Perintah juga mengisi data contoh: satu sekolah (`Sekolah Harapan Bangsa (contoh)`), tahun ajaran 2026/2027, kelas 7A dan 10N, tiga murid beserta wali, tiga tagihan dan satu rekening, agar dashboard preview tidak kosong. Semua data bersifat sintetis. Perintah tidak mengubah akun atau data yang sudah ada, dan ditolak di lingkungan produksi maupun PostgreSQL. Jangan gunakan akun/password ini pada server publik.
+
+### Preview HTTPS: jika login menampilkan CSRF 403
+Set `DJANGO_CSRF_TRUSTED_ORIGINS` pada environment server ke origin HTTPS yang tepat, misalnya `https://preview.example.test` (tanpa `/accounts/login/` dan tanpa garis miring terakhir), dan pastikan host juga ada di `DJANGO_ALLOWED_HOSTS`. Restart aplikasi setelah mengganti environment, kemudian muat ulang halaman login. Jangan gunakan wildcard domain atau mematikan CSRF. Jika berada di belakang reverse proxy, pengaturan proxy tepercaya harus sesuai setup deployment; jangan aktifkan header forwarding dari jaringan yang tidak dipercaya.
