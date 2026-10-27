@@ -107,3 +107,47 @@ def remove(request,provider):
     config=get_object_or_404(IntegrationConfig,provider=provider)
     config.delete()
     return redirect('integration_settings')
+
+@login_required
+def reveal(request,provider):
+    """Re-authenticate before showing stored secrets to an active superuser."""
+    import logging
+    from django.views.decorators.debug import sensitive_post_parameters
+    from django.contrib.auth import authenticate
+    from django.core.cache import cache
+    check_superuser(request.user)
+    if provider not in SPECS: raise Http404
+    config=get_object_or_404(IntegrationConfig,provider=provider)
+    error=None
+    secrets=None
+    if request.method=='POST':
+        # Authentication backends apply their usual password checking; do not log input.
+        password=request.POST.get('password','')
+        limit_key=f'shb:reveal:attempts:{request.user.pk}'
+        try:
+            cache.add(limit_key, 0, timeout=900)
+            attempts=cache.incr(limit_key)
+        except Exception:
+            attempts=6  # Fail closed if the rate-limit store is unavailable.
+        user=authenticate(request,username=request.user.get_username(),password=password) if attempts <= 5 else None
+        if attempts > 5:
+            error='Terlalu banyak percobaan. Coba lagi setelah 15 menit.'
+        elif user is None or user.pk != request.user.pk or not user.is_active or not user.is_superuser:
+            error='Password tidak valid.'
+        elif cipher() is None:
+            error='Kunci enkripsi server belum tersedia.'
+        else:
+            try:
+                secrets=decrypt(config,cipher())
+                cache.delete(limit_key)
+                logging.getLogger('shb.security').warning('Integration secret viewed: user_id=%s provider=%s',request.user.pk,provider)
+            except ValueError as exc:
+                error=str(exc)
+    response=render(request,'portal/integration_reveal.html',{'provider':provider,'error':error,'secrets':secrets})
+    response['Cache-Control']='private, no-store, max-age=0'
+    response['Pragma']='no-cache'
+    return response
+
+# Ensure password input is redacted from Django error reports.
+from django.views.decorators.debug import sensitive_post_parameters
+reveal = sensitive_post_parameters('password')(reveal)
