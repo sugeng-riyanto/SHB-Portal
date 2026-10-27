@@ -110,3 +110,9 @@ class Message(models.Model):
     body = models.TextField(max_length=5000)
     email_status = models.CharField(max_length=10,choices=Delivery.choices,default=Delivery.PENDING)
     created_at = models.DateTimeField(auto_now_add=True)
+
+class UserProfile(models.Model):
+    user = models.OneToOneField(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='shb_profile')
+    must_change_password = models.BooleanField(default=True)
+    photo = models.BinaryField(null=True, blank=True)
+    photo_type = models.CharField(max_length=12, blank=True)
