@@ -312,3 +312,16 @@ class DashboardAccessTests(TestCase):
                     response=client.post('/accounts/login/',{'username':role+'@shb.sch.id','password':'DemoSHB!2026','csrfmiddlewaretoken':client.cookies['csrftoken'].value},HTTP_ORIGIN=origin)
                     self.assertRedirects(response,'/dashboard/')
                     self.assertEqual(client.get('/dashboard/').status_code,200)
+
+    def test_class_recipient_selection_deduplicates_and_isolates(self):
+        from .recipients import class_recipients
+        admin=get_user_model().objects.create_user(username='bulkadmin',password='long-test-password')
+        Membership.objects.create(user=admin,school=self.school,role='admin')
+        self.guardian.email='parent@example.test';self.guardian.save()
+        second=Student.objects.create(school=self.school,nis='002',name='SECOND CHILD')
+        second.guardians.add(self.guardian)
+        Enrollment.objects.create(student=second,classroom=self.classroom)
+        recipients=list(class_recipients(admin,self.classroom.pk))
+        self.assertEqual([u.pk for u in recipients],[self.guardian.pk])
+        self.assertFalse(class_recipients(self.other,self.classroom.pk).exists())
+        self.assertFalse(class_recipients(self.teacher,self.classroom.pk).exists())
