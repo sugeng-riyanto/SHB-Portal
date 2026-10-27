@@ -159,3 +159,10 @@ class ActivityEvent(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
     class Meta:
         ordering = ['-created_at','-pk']
+
+class PaymentReceipt(models.Model):
+    invoice = models.OneToOneField(Invoice,on_delete=models.PROTECT,related_name='receipt')
+    number = models.CharField(max_length=40, unique=True)
+    verification_code = models.CharField(max_length=6)
+    amount = models.PositiveBigIntegerField()
+    issued_at = models.DateTimeField(auto_now_add=True)
