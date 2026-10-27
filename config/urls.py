@@ -4,6 +4,7 @@ from django.urls import path
 from portal import views, students, banks, messaging, account
 urlpatterns = [
     path('admin/', admin.site.urls), path('',views.home,name='home'),
+    path('kabar-sekolah/',views.school_news,name='school_news'),
     path('dashboard/',views.dashboard,name='dashboard'),
     path('messages/compose/',messaging.compose,name='message_compose'),
     path('messages/history/',messaging.history,name='message_history'),
