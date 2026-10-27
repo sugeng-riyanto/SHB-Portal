@@ -147,3 +147,25 @@ class DashboardAccessTests(TestCase):
         response=self.client.post('/invoices/1/proof/',{'amount':'100','transfer_date':'2026-10-27','image':SimpleUploadedFile('fake.png',b'not an image')})
         self.assertContains(response,'Foto tidak valid')
         self.assertEqual(TransferProof.objects.count(),0)
+
+    def test_superadmin_can_manage_school_and_view_data(self):
+        user = get_user_model().objects.create_superuser(username='root-user',email='root@example.test',password='long-test-password')
+        self.client.force_login(user)
+        self.assertContains(self.client.get('/dashboard/'),'ANAK SATU')
+        self.assertEqual(self.client.get('/admin/portal/school/').status_code,200)
+        self.assertEqual(self.client.get('/admin/portal/membership/').status_code,200)
+    def test_staff_without_superuser_cannot_use_admin(self):
+        staff = get_user_model().objects.create_user(username='staff-user',password='long-test-password',is_staff=True)
+        self.client.force_login(staff)
+        self.assertEqual(self.client.get('/admin/portal/membership/').status_code,302)
+
+    def test_integration_status_only_superuser_never_displays_secret(self):
+        from unittest.mock import patch
+        root = get_user_model().objects.create_superuser(username='super-settings',email='root@example.test',password='long-test-password')
+        with patch.dict('os.environ', {'SMTP_PASSWORD':'secret-value-for-test'}):
+            self.client.force_login(root)
+            response = self.client.get('/superadmin/integrations/')
+            self.assertContains(response,'Midtrans')
+            self.assertNotContains(response,'secret-value-for-test')
+            self.client.force_login(self.guardian)
+            self.assertEqual(self.client.get('/superadmin/integrations/').status_code,404)
