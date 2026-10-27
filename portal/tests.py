@@ -426,6 +426,87 @@ class DashboardAccessTests(TestCase):
         self.assertTrue(any('jatuh_tempo' in e for e in rows[0]['errors']))
         self.assertTrue(any('duplikat' in e for e in rows[1]['errors']))
 
+    def test_cross_school_membership_cannot_edit_or_withdraw_proof(self):
+        # Guardianship (student.guardians) is school-agnostic, so a linked guardian who is
+        # only a member of another school can own a proof on a SHB invoice. School scope
+        # must still deny, and the control below proves the 404 came from school scope.
+        user=get_user_model().objects.create_user(username='cross-school-guardian',password='long-test-password')
+        self.student.guardians.add(user)
+        Membership.objects.create(user=user,school=self.other_school,role='guardian')
+        proof=TransferProof.objects.create(invoice=self.invoice,guardian=user,reported_amount=100000,transfer_date=date(2026,10,27),image=b'x',image_type='png')
+        self.client.force_login(user)
+        self.assertEqual(self.client.get(f'/proofs/{proof.pk}/edit/').status_code,404)
+        self.assertEqual(self.client.post(f'/proofs/{proof.pk}/edit/',{'amount':'999999','transfer_date':'2026-10-28'}).status_code,404)
+        self.assertEqual(self.client.post(f'/proofs/{proof.pk}/withdraw/').status_code,404)
+        proof.refresh_from_db()
+        self.assertEqual((proof.reported_amount,proof.transfer_date,proof.status),(100000,date(2026,10,27),'pending'))
+        Membership.objects.create(user=user,school=self.school,role='guardian')
+        self.assertEqual(self.client.post(f'/proofs/{proof.pk}/edit/',{'amount':'999999','transfer_date':'2026-10-28'}).status_code,302)
+        proof.refresh_from_db();self.assertEqual(proof.reported_amount,999999)
+
+    def test_cross_school_enrollment_proof_is_not_editable_or_withdrawable(self):
+        # An enrollment whose classroom belongs to another school is the one shape where the
+        # student's school and the invoice's school disagree; it must stay out of scope.
+        year=AcademicYear.objects.create(school=self.other_school,label='2026/27')
+        other_class=Classroom.objects.create(year=year,name='9A')
+        bad=Enrollment.objects.create(student=self.student,classroom=other_class)
+        invoice=Invoice.objects.create(enrollment=bad,reference='BAD-PROOF',description='CROSS SCHOOL',amount=100000,due_date=date(2026,11,1))
+        proof=TransferProof.objects.create(invoice=invoice,guardian=self.guardian,reported_amount=100000,transfer_date=date(2026,10,27),image=b'x',image_type='png')
+        self.client.force_login(self.guardian)
+        self.assertEqual(self.client.get(f'/proofs/{proof.pk}/edit/').status_code,404)
+        self.assertEqual(self.client.post(f'/proofs/{proof.pk}/edit/',{'amount':'120000','transfer_date':'2026-10-28'}).status_code,404)
+        self.assertEqual(self.client.post(f'/proofs/{proof.pk}/withdraw/').status_code,404)
+        proof.refresh_from_db();self.assertEqual((proof.reported_amount,proof.status),(100000,'pending'))
+        # Control: the same proof becomes editable once the enrollment is in-scope again.
+        bad.classroom=self.classroom;bad.save()
+        self.assertEqual(self.client.post(f'/proofs/{proof.pk}/edit/',{'amount':'120000','transfer_date':'2026-10-28'}).status_code,302)
+        proof.refresh_from_db();self.assertEqual(proof.reported_amount,120000)
+
+    def test_revoked_membership_blocks_edit_and_withdraw(self):
+        # A live session is not the authorization boundary; the active membership is.
+        proof=TransferProof.objects.create(invoice=self.invoice,guardian=self.guardian,reported_amount=100000,transfer_date=date(2026,10,27),image=b'x',image_type='png')
+        Membership.objects.filter(user=self.guardian,school=self.school,role='guardian').update(active=False)
+        self.client.force_login(self.guardian)
+        self.assertEqual(self.client.get(f'/proofs/{proof.pk}/edit/').status_code,404)
+        self.assertEqual(self.client.post(f'/proofs/{proof.pk}/edit/',{'amount':'120000','transfer_date':'2026-10-28'}).status_code,404)
+        self.assertEqual(self.client.post(f'/proofs/{proof.pk}/withdraw/').status_code,404)
+        proof.refresh_from_db();self.assertEqual((proof.reported_amount,proof.status),(100000,'pending'))
+        Membership.objects.filter(user=self.guardian,school=self.school,role='guardian').update(active=True)
+        self.assertEqual(self.client.post(f'/proofs/{proof.pk}/edit/',{'amount':'120000','transfer_date':'2026-10-28'}).status_code,302)
+        proof.refresh_from_db();self.assertEqual(proof.reported_amount,120000)
+
+    def test_same_school_staff_cannot_edit_or_withdraw_but_admin_can_verify(self):
+        # The class teacher and the school admin can read or verify this proof, so the 404s
+        # below pin the edit/withdraw right to the owning guardian rather than to any role.
+        admin=get_user_model().objects.create_user(username='school-admin-proofs',password='long-test-password')
+        Membership.objects.create(user=admin,school=self.school,role='admin')
+        proof=TransferProof.objects.create(invoice=self.invoice,guardian=self.guardian,reported_amount=100000,transfer_date=date(2026,10,27),image=b'x',image_type='png')
+        for user in (self.teacher,admin):
+            with self.subTest(user=user.username):
+                self.client.force_login(user)
+                self.assertEqual(self.client.get(f'/proofs/{proof.pk}/edit/').status_code,404)
+                self.assertEqual(self.client.post(f'/proofs/{proof.pk}/edit/',{'amount':'120000','transfer_date':'2026-10-28'}).status_code,404)
+                self.assertEqual(self.client.post(f'/proofs/{proof.pk}/withdraw/').status_code,404)
+        proof.refresh_from_db();self.assertEqual((proof.reported_amount,proof.status),(100000,'pending'))
+        self.client.force_login(admin)
+        self.assertEqual(self.client.post(f'/proofs/{proof.pk}/verify/').status_code,302)
+        proof.refresh_from_db();self.assertEqual(proof.status,'verified');self.assertEqual(Payment.objects.count(),1)
+
+    def test_other_school_admin_sees_no_proof_and_cannot_act_on_it(self):
+        proof=TransferProof.objects.create(invoice=self.invoice,guardian=self.guardian,reported_amount=137137,transfer_date=date(2026,10,27),image=b'x',image_type='png')
+        self.client.force_login(self.other)
+        listing=self.client.get('/proofs/')
+        self.assertEqual(listing.status_code,200)
+        self.assertNotContains(listing,'137137');self.assertNotContains(listing,'Lihat foto')
+        self.assertEqual(self.client.get(f'/proofs/{proof.pk}/edit/').status_code,404)
+        self.assertEqual(self.client.post(f'/proofs/{proof.pk}/edit/',{'amount':'120000','transfer_date':'2026-10-28'}).status_code,404)
+        self.assertEqual(self.client.post(f'/proofs/{proof.pk}/withdraw/').status_code,404)
+        self.assertEqual(self.client.post(f'/proofs/{proof.pk}/verify/').status_code,404)
+        self.assertEqual(self.client.get(f'/proofs/{proof.pk}/image/').status_code,404)
+        proof.refresh_from_db();self.assertEqual((proof.reported_amount,proof.status),(137137,'pending'))
+        self.client.force_login(self.guardian)
+        self.assertContains(self.client.get('/proofs/'),'137137')
+
 class SeedDemoCommandTests(TestCase):
     def setUp(self):
         from django.db import connection
