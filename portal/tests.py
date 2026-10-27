@@ -347,3 +347,23 @@ class DashboardAccessTests(TestCase):
         response=self.client.get('/accounts/login/')
         self.assertContains(response,'data-password-target="id_password"')
         self.assertContains(response,'csrfmiddlewaretoken')
+
+    def test_school_news_only_published_and_current(self):
+        from datetime import timedelta
+        from django.utils import timezone
+        from .models import SchoolUpdate
+        SchoolUpdate.objects.create(title='Published news',body='School news',published=True,published_at=timezone.now()-timedelta(days=1))
+        SchoolUpdate.objects.create(title='PRIVATE DRAFT',body='Draft',published=False,published_at=timezone.now())
+        SchoolUpdate.objects.create(title='FUTURE NEWS',body='Future',published=True,published_at=timezone.now()+timedelta(days=1))
+        for url in ('/','/kabar-sekolah/'):
+            response=self.client.get(url)
+            self.assertContains(response,'Published news')
+            self.assertNotContains(response,'PRIVATE DRAFT')
+            self.assertNotContains(response,'FUTURE NEWS')
+    def test_social_links_require_https_and_open_safely(self):
+        from unittest.mock import patch
+        with patch.dict('os.environ',{'SHB_INSTAGRAM_URL':'https://instagram.com/example','SHB_YOUTUBE_URL':'javascript:alert(1)'}):
+            response=self.client.get('/')
+            self.assertContains(response,'https://instagram.com/example')
+            self.assertContains(response,'rel="noopener noreferrer"')
+            self.assertNotContains(response,'javascript:alert(1)')
