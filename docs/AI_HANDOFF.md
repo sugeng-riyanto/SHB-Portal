@@ -90,3 +90,6 @@ Tambah filter kelas, pilihan beberapa bukti, total nominal pada browser, verifik
 
 ## Navbar responsif
 Navbar portal memakai tombol menu pada viewport kecil, target sentuh lebih besar, layout bahasa dan navigasi menyesuaikan layar, serta fallback tetap tampil saat JS tidak tersedia. Tes render dan pilihan bahasa lulus; belum ada uji visual pada browser/perangkat nyata. Django admin memiliki navbar sendiri.
+
+## Preview bukti 404 dan CSRF
+Tautan unggah pada dashboard hanya ditampilkan kepada wali yang benar-benar terhubung, dengan membership aktif; admin dan guru tetap dapat melihat bukti sesuai scope tetapi tidak mendapat tautan unggah. `seed_demo_data` menambahkan murid, kelas dan tagihan contoh hanya untuk SQLite development, tanpa mengubah password. Tests lokal: demo guardian bisa membuka form, guru ditolak, submit CSRF aktif lulus. Preview Freebuff belum diakses; error token missing tetap perlu diagnosis di environment aktual.
