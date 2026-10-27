@@ -161,3 +161,14 @@ if PRODUCTION:
         SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
 SECURE_CONTENT_TYPE_NOSNIFF = True
 X_FRAME_OPTIONS = 'DENY'
+
+# Email disabled unless explicitly enabled; no secrets stored in source.
+SHB_EMAIL_ENABLED = os.environ.get('SHB_EMAIL_ENABLED', '0') == '1'
+EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
+EMAIL_HOST = os.environ.get('SMTP_HOST', 'localhost')
+EMAIL_PORT = int(os.environ.get('SMTP_PORT', '587'))
+EMAIL_HOST_USER = os.environ.get('SMTP_USER', '')
+EMAIL_HOST_PASSWORD = os.environ.get('SMTP_PASSWORD', '')
+EMAIL_USE_TLS = os.environ.get('SMTP_USE_TLS', '1') == '1'
+EMAIL_TIMEOUT = 15
+DEFAULT_FROM_EMAIL = os.environ.get('SMTP_FROM_EMAIL', EMAIL_HOST_USER)
