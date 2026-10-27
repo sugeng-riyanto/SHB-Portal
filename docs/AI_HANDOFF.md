@@ -69,3 +69,6 @@ Login Django membuat profil awal yang mewajibkan perubahan password sebelum masu
 
 ## Landing page dan kabar sekolah
 Landing page menggunakan bahasa yang lebih hangat; halaman /kabar-sekolah/ menampilkan maksimal enam kabar yang telah diterbitkan dan waktu publikasinya sudah tiba. Superuser Django dapat mengelola SchoolUpdate di /admin/; belum ada antarmuka admin sekolah. Link Instagram/Facebook/YouTube diatur melalui environment HTTPS dan dibuka pada tab baru. Belum ada akun resmi yang dikonfigurasi. Dua tes lokal lulus; belum ada uji visual browser.
+
+## Bahasa
+Default English dan pilihan English/Indonesia/Mandarin Tradisional pada bagian landing, navigasi, login dan dashboard dasar. Terjemahan masih parsial: formulir Django, teks dinamis, pengumuman, email, beberapa halaman fitur, tombol tema dan pesan validasi belum seluruhnya diterjemahkan; jangan klaim bilingual lengkap. CSS/JS tetap lokal.
