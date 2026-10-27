@@ -301,6 +301,23 @@ class DashboardAccessTests(TestCase):
             response=client.post('/accounts/login/',{'username':user.username,'password':'long-test-password','csrfmiddlewaretoken':token},HTTP_ORIGIN='https://preview.example.test')
             self.assertEqual(response.status_code,302)
 
+    def test_demo_role_logins_and_dashboards_with_csrf(self):
+        from django.db import connection
+        if connection.vendor != 'sqlite':
+            self.skipTest('seed_demo diizinkan hanya pada SQLite development.')
+        from io import StringIO
+        from django.core.management import call_command
+        from django.test import Client, override_settings
+        call_command('seed_demo', stdout=StringIO())
+        origin='https://pv-ac9ad268c614-51b1306d-b202-4d34-b04b-346824493b23.style.dev'
+        with override_settings(CSRF_TRUSTED_ORIGINS=[origin]):
+            for role in ('superadmin','admin','kepala','yayasan','walikelas','ortu'):
+                with self.subTest(role=role):
+                    client=Client(enforce_csrf_checks=True)
+                    client.get('/accounts/login/')
+                    response=client.post('/accounts/login/',{'username':role+'@shb.sch.id','password':'DemoSHB!2026','csrfmiddlewaretoken':client.cookies['csrftoken'].value},HTTP_ORIGIN=origin)
+                    self.assertRedirects(response,'/dashboard/')
+                    self.assertEqual(client.get('/dashboard/').status_code,200)
 class SeedDemoCommandTests(TestCase):
     def setUp(self):
         from django.db import connection
