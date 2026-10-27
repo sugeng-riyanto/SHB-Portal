@@ -1,0 +1,3 @@
+# Backup dan pemulihan
+
+Tentukan RPO/RTO dan jadwal sesuai anggaran, kebutuhan sekolah dan kapabilitas paket Supabase aktual; jangan mengasumsikan fitur backup atau PITR tersedia. Cadangkan database, skema dan konfigurasi yang diperlukan secara terenkripsi, dengan akses minimal dan penyimpanan terpisah sesuai kebijakan. Uji restore berkala ke lingkungan terisolasi: cocokkan jumlah, relasi wali, saldo, migrasi dan integritas. Catat waktu, versi dan hasil; rahasia dipulihkan melalui secret manager. Latihan sebelum rilis; tentukan penanggung jawab dan prosedur pemulihan Auth sesuai layanan yang dipilih.

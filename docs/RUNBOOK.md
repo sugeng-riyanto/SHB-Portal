@@ -1,0 +1,3 @@
+# Runbook operasional
+
+Sebelum tindakan: catat lingkungan, waktu, gejala dan dampak, cek dashboard health, worker, antrean, log aman, status Auth/database dan SMTP. Email gagal: periksa konfigurasi dan batas provider tanpa menampilkan kredensial, hentikan kampanye bila salah penerima, perbaiki penyebab, preview penerima, retry terkontrol dengan idempotency. Pembayaran salah: catat koreksi/void dengan alasan, jangan ubah histori diam-diam. Impor salah: hentikan pengiriman, tinjau batch dan saldo; gunakan koreksi terotorisasi. Akun/akses salah: nonaktifkan sesi/role atau relasi, periksa audit dan eskalasi. Restore hanya di lingkungan terisolasi dahulu; ikuti BACKUP_RESTORE. Isi kontak piket dan prosedur aktual sebelum produksi.

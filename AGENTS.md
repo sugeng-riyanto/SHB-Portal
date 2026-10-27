@@ -1,0 +1,3 @@
+# Instruksi agen pengembang
+
+Baca PROJECT_CONSTITUTION, PRODUCT_REQUIREMENTS, SECURITY, DATA_MODEL dan AI_HANDOFF sebelum perubahan. Identifikasi repo dan branch, status kerja, dan jangan menimpa pekerjaan lain. Bekerja dalam perubahan kecil; tambah migrasi dan tes yang relevan; jalankan pemeriksaan sesuai perubahan. Jangan klaim lulus tanpa bukti. Update AI_HANDOFF dengan commit, lingkungan, tes, risiko dan tugas berikut. Jangan simpan secrets atau data murid nyata di repo/log. Operasi produksi, migrasi destruktif, pengiriman massal dan rilis memerlukan otorisasi eksplisit sesuai konteks dan verifikasi. Perlindungan data dan isolasi akses adalah syarat rilis.
