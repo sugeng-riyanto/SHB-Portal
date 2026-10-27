@@ -78,7 +78,11 @@ from .proofs import accessible_proofs, validate_image
 
 @login_required
 def proofs_list(request):
-    proofs = list(accessible_proofs(request.user).select_related('invoice__enrollment__student')[:100])
+    proofs_query = accessible_proofs(request.user).select_related('invoice__enrollment__student', 'invoice__enrollment__classroom')
+    class_filter = request.GET.get('class', '').strip()[:20]
+    if class_filter:
+        proofs_query = proofs_query.filter(invoice__enrollment__classroom__name=class_filter)
+    proofs = list(proofs_query[:100])
     admin_schools = set(Membership.objects.filter(user=request.user, active=True, role=Membership.Role.ADMIN).values_list('school_id', flat=True))
     if request.user.is_active and request.user.is_superuser:
         from .models import School
@@ -86,6 +90,7 @@ def proofs_list(request):
     for proof in proofs:
         proof.may_verify = proof.invoice.enrollment.student.school_id in admin_schools
         proof.may_edit = proof.guardian_id == request.user.id and proof.status == TransferProof.Status.PENDING
+        proof.may_comment = proof.guardian_id == request.user.id or proof.may_verify
     return render(request, 'portal/proofs.html', {'proofs': proofs})
 
 @login_required
@@ -193,3 +198,47 @@ def proof_withdraw(request, proof_id):
         proof.status=TransferProof.Status.WITHDRAWN
         proof.save(update_fields=['status'])
     return redirect('proofs_list')
+
+@login_required
+@require_POST
+def proof_bulk_verify(request):
+    raw = request.POST.getlist('proof_ids')
+    if not raw or len(raw) > 100 or any(not value.isdigit() for value in raw):
+        return HttpResponseBadRequest('Pilih 1–100 bukti yang valid.')
+    ids = sorted(set(int(value) for value in raw))
+    if len(ids) != len(raw):
+        return HttpResponseBadRequest('Pilihan bukti duplikat.')
+    try:
+        with transaction.atomic():
+            proofs = list(TransferProof.objects.select_for_update().filter(pk__in=ids).select_related('invoice__enrollment__student', 'invoice__enrollment__classroom__year').order_by('pk'))
+            if len(proofs) != len(ids): raise ValueError('Bukti tidak tersedia.')
+            for proof in proofs:
+                student = proof.invoice.enrollment.student
+                if not (request.user.is_active and request.user.is_superuser or Membership.objects.filter(user=request.user,school=student.school,role=Membership.Role.ADMIN,active=True).exists()): raise ValueError('Bukti di luar hak akses.')
+                if proof.invoice.enrollment.classroom.year.school_id != student.school_id: raise ValueError('Sekolah tidak sesuai.')
+                invoice = Invoice.objects.select_for_update().get(pk=proof.invoice_id)
+                if proof.status != TransferProof.Status.PENDING or invoice.cancelled: raise ValueError('Bukti sudah diproses atau tagihan dibatalkan.')
+                paid = invoice.payments.filter(verified=True).aggregate(total=Sum('amount'))['total'] or 0
+                if proof.reported_amount > invoice.amount + invoice.fine - paid: raise ValueError('Nominal melebihi sisa tagihan.')
+                Payment.objects.create(invoice=invoice,amount=proof.reported_amount,verified=True)
+                proof.status=TransferProof.Status.VERIFIED;proof.reviewed_by=request.user;proof.reviewed_at=timezone.now()
+                proof.save(update_fields=['status','reviewed_by','reviewed_at'])
+    except ValueError as exc:
+        return HttpResponseBadRequest(str(exc))
+    return redirect('proofs_list')
+
+@login_required
+def proof_comments(request, proof_id):
+    from .models import ProofComment
+    proof=get_object_or_404(accessible_proofs(request.user).select_related('invoice__enrollment__student'),pk=proof_id)
+    school_id=proof.invoice.enrollment.student.school_id
+    is_admin=request.user.is_active and (request.user.is_superuser or Membership.objects.filter(user=request.user,school_id=school_id,role=Membership.Role.ADMIN,active=True).exists())
+    if proof.guardian_id != request.user.id and not is_admin: raise Http404
+    error=None
+    if request.method=='POST':
+        body=request.POST.get('body','').strip()
+        if not body or len(body)>1000: error='Komentar wajib diisi, maksimal 1.000 karakter.'
+        else:
+            ProofComment.objects.create(proof=proof,sender=request.user,body=body)
+            return redirect('proof_comments',proof_id=proof.pk)
+    return render(request,'portal/proof_comments.html',{'proof':proof,'comments':proof.comments.select_related('sender').order_by('created_at'),'error':error})
