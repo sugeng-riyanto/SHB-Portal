@@ -30,20 +30,24 @@ def school_news(request):
 
 @login_required
 def dashboard(request):
-    memberships = Membership.objects.filter(user=request.user, active=True).select_related('school')
+    memberships = list(Membership.objects.filter(user=request.user, active=True).select_related('school'))
+    is_super_admin = bool(request.user.is_active and request.user.is_superuser)
+    is_school_admin = any(m.role == Membership.Role.ADMIN for m in memberships) and not is_super_admin
     invoices = list(scoped_invoices(request.user).select_related('enrollment__student','enrollment__classroom')[:100])
     guardian_schools = set(Membership.objects.filter(user=request.user, role=Membership.Role.GUARDIAN, active=True).values_list('school_id', flat=True))
     linked_students = set(request.user.linked_students.values_list('id', flat=True))
     for invoice in invoices:
         invoice.may_upload_proof = invoice.enrollment.student.school_id in guardian_schools and invoice.enrollment.student_id in linked_students and not invoice.cancelled
     aggregate_query = aggregate_invoices(request.user)
+    if is_school_admin:
+        aggregate_query = scoped_invoices(request.user).filter(cancelled=False)
     summary = aggregate_query.aggregate(count=Count('id'), total=Sum('amount'))
     # Leadership aggregate and individual scopes remain separate; no student names in chart.
     chart_query = aggregate_query if aggregate_query.exists() else scoped_invoices(request.user).filter(cancelled=False)
     months = list(chart_query.annotate(month=TruncMonth('due_date')).values('month').annotate(count=Count('id')).order_by('month')[:24])
     maximum = max((m['count'] for m in months), default=1)
     for month in months: month['width'] = round(100 * month['count'] / maximum)
-    return render(request, 'portal/dashboard.html', {'memberships': memberships, 'invoices': invoices, 'summary': summary, 'months': months})
+    return render(request, 'portal/dashboard.html', {'memberships': memberships, 'invoices': invoices, 'summary': summary, 'months': months, 'is_super_admin': is_super_admin, 'is_school_admin': is_school_admin})
 
 from django.http import HttpResponse, HttpResponseForbidden
 from .imports import ImportErrorDetail, preview_xlsx, template_bytes, MAX_BYTES
