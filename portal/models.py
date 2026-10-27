@@ -116,3 +116,12 @@ class UserProfile(models.Model):
     must_change_password = models.BooleanField(default=True)
     photo = models.BinaryField(null=True, blank=True)
     photo_type = models.CharField(max_length=12, blank=True)
+
+class SchoolUpdate(models.Model):
+    title = models.CharField(max_length=180)
+    body = models.TextField(max_length=5000)
+    published = models.BooleanField(default=False)
+    published_at = models.DateTimeField(null=True, blank=True)
+    class Meta:
+        ordering = ['-published_at', '-pk']
+    def __str__(self): return self.title
