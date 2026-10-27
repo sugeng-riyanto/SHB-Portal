@@ -96,3 +96,6 @@ Tautan unggah pada dashboard hanya ditampilkan kepada wali yang benar-benar terh
 
 ## Jenis pembayaran, aktivitas dan visualisasi awal
 Admin sekolah/superadmin dapat mengelola PaymentType dan ekspor; default Monthly, ECA, Annual Fee, Stationery dan Late Fee ditambahkan melalui aksi eksplisit per sekolah. Kategori belum terhubung ke invoice/impor. ActivityEvent baru mencatat aksi jenis pembayaran, bukan seluruh aktivitas user. Dashboard menampilkan grafik jumlah tagihan per bulan dalam scope dan ekspor XLSX tagihan sesuai scope. Ekspor bukan bukti pembayaran digital, tidak ditandatangani, dan belum mencakup agregat yayasan/kepala sekolah; spider/radar, timeseries keuangan, bukti digital diverifikasi dan audit lengkap belum selesai. Tes terarah SQLite lulus; Postgres/RLS/browser belum diuji.
+
+## Pemisahan dashboard super admin dan admin sekolah
+Dashboard menampilkan judul, menu dan scope berbeda: super admin lintas sekolah; admin sekolah sesuai membership aktif. Ringkasan admin sekarang menghitung hanya invoice dalam lingkup sekolahnya. Grafik ditata ulang untuk lebar layar kecil; dua tes akses/scope lulus lokal. Belum diuji visual pada perangkat nyata atau terhadap Supabase/RLS; semua grafik dan analitik yang direncanakan belum lengkap.
