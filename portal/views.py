@@ -1,7 +1,8 @@
 from django.contrib.auth.decorators import login_required
-from django.db.models import Q
+from django.db.models import Count, Sum
 from django.shortcuts import render
-from .models import Invoice, Membership
+from .access import aggregate_invoices, scoped_invoices
+from .models import Membership
 
 def home(request):
     return render(request, 'portal/home.html')
@@ -9,14 +10,6 @@ def home(request):
 @login_required
 def dashboard(request):
     memberships = Membership.objects.filter(user=request.user, active=True).select_related('school')
-    scope = Q(pk__in=[])
-    for m in memberships:
-        school = Q(enrollment__student__school_id=m.school_id)
-        if m.role == Membership.Role.ADMIN:
-            scope |= school
-        elif m.role == Membership.Role.GUARDIAN:
-            scope |= school & Q(enrollment__student__guardians=request.user)
-        elif m.role == Membership.Role.TEACHER:
-            scope |= school & Q(enrollment__classroom__teachers=request.user)
-    invoices = Invoice.objects.filter(scope).select_related('enrollment__student','enrollment__classroom').distinct()[:100]
-    return render(request, 'portal/dashboard.html', {'memberships': memberships, 'invoices': invoices})
+    invoices = scoped_invoices(request.user).select_related('enrollment__student','enrollment__classroom')[:100]
+    summary = aggregate_invoices(request.user).aggregate(count=Count('id'), total=Sum('amount'))
+    return render(request, 'portal/dashboard.html', {'memberships': memberships, 'invoices': invoices, 'summary': summary})
