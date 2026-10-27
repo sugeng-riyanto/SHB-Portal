@@ -55,6 +55,14 @@ Buka `http://127.0.0.1:8000/`. Panel super admin ada di `/admin/`. Akses portal 
 python manage.py test portal
 ```
 
+Untuk menjalankan suite yang sama pada PostgreSQL sungguhan (tanpa root, satu perintah):
+
+```bash
+./scripts/pg_test.sh
+```
+
+Lihat [panduan uji PostgreSQL](docs/POSTGRES_TESTING.md) untuk prasyarat, skip yang disengaja dan batasannya.
+
 ```powershell
 # Windows PowerShell: tes aturan domain
 $env:PYTHONPATH = 'src'

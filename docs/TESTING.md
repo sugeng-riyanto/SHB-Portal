@@ -9,3 +9,5 @@ Uji clipboard VA dan fallback; wali dua anak, isolasi foto dan data lintas kelua
 Uji alert menjelang dan melewati jatuh tempo, pembayaran sebelum pengiriman, tanggal dan zona waktu, serta isolasi scope tiap role; uji tombol bantuan pada semua halaman dan lebar layar, akses keyboard, nomor belum diatur dan pembukaan nomor terverifikasi tanpa data sensitif. Pastikan seluruh hak pada matriks berlaku juga pada API dan private storage.
 
 Uji perubahan pengaturan hanya oleh admin sesuai scope, validasi nomor dan jadwal, fallback logo, file logo tak valid, tampilan logo pada light/dark dan mobile, serta audit perubahan. Uji alert terhadap konfigurasi terkini dan tagihan yang telah lunas.
+
+Menjalankan suite pada mesin PostgreSQL sungguhan (bukan SQLite) memakai satu perintah `./scripts/pg_test.sh`; prasyarat, hasil yang diharapkan, skip yang disengaja dan batasannya ada di [POSTGRES_TESTING.md](POSTGRES_TESTING.md).
