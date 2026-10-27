@@ -229,3 +229,11 @@ class DashboardAccessTests(TestCase):
         Membership.objects.create(user=admin,school=self.school,role='admin')
         self.client.force_login(admin)
         self.assertEqual(self.client.get('/banks/').status_code,404)
+
+    def test_sensitive_proof_response_no_store(self):
+        from .models import TransferProof
+        proof=TransferProof.objects.create(invoice=Invoice.objects.get(),guardian=self.guardian,reported_amount=1,transfer_date=date(2026,10,27),image=b'x',image_type='png')
+        self.client.force_login(self.guardian)
+        response=self.client.get(f'/proofs/{proof.pk}/image/')
+        self.assertEqual(response['Cache-Control'],'private, no-store')
+        self.assertEqual(response['X-Content-Type-Options'],'nosniff')
