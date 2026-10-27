@@ -1,12 +1,14 @@
 from django.contrib import admin
 from django.contrib.auth import views as auth_views
 from django.urls import path, include
-from portal import views, students, banks, messaging, account, integrations, payment_types, exports
+from portal import views, students, banks, messaging, account, integrations, payment_types, exports, receipts
 urlpatterns = [
     path("i18n/", include("django.conf.urls.i18n")),
     path('admin/', admin.site.urls), path('',views.home,name='home'),
     path('kabar-sekolah/',views.school_news,name='school_news'),
     path('dashboard/',views.dashboard,name='dashboard'),
+    path('receipts/<int:receipt_id>/download.pdf',receipts.download_pdf,name='receipt_pdf'),
+    path('receipts/verify/',receipts.verify,name='receipt_verify'),
     path('dashboard/export.xlsx',exports.invoice_export,name='invoice_export'),
     path('messages/compose/',messaging.compose,name='message_compose'),
     path('messages/history/',messaging.history,name='message_history'),
