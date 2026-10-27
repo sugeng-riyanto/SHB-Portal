@@ -1,16 +1,24 @@
 from django.contrib import admin
 from django.contrib.auth import views as auth_views
 from django.urls import path, include
-from portal import views, students, banks, messaging, account, integrations
+from portal import views, students, banks, messaging, account, integrations, payment_types, exports
 urlpatterns = [
     path("i18n/", include("django.conf.urls.i18n")),
     path('admin/', admin.site.urls), path('',views.home,name='home'),
     path('kabar-sekolah/',views.school_news,name='school_news'),
     path('dashboard/',views.dashboard,name='dashboard'),
+    path('dashboard/export.xlsx',exports.invoice_export,name='invoice_export'),
     path('messages/compose/',messaging.compose,name='message_compose'),
     path('messages/history/',messaging.history,name='message_history'),
     path('messages/inbox/',messaging.inbox,name='message_inbox'),
     path('students/',students.student_list,name='student_list'),
+    path('payment-types/',payment_types.list_types,name='payment_types'),
+    path('payment-types/new/',payment_types.edit_type,name='payment_type_create'),
+    path('payment-types/defaults/',payment_types.add_defaults,name='payment_type_defaults'),
+    path('payment-types/export.xlsx',payment_types.export_types,name='payment_type_export'),
+    path('payment-types/<int:type_id>/edit/',payment_types.edit_type,name='payment_type_edit'),
+    path('payment-types/<int:type_id>/deactivate/',payment_types.deactivate_type,name='payment_type_deactivate'),
+    path('activities/',payment_types.activities,name='activities'),
     path('banks/',banks.bank_list,name='bank_list'),
     path('banks/new/',banks.bank_edit,name='bank_create'),
     path('banks/export.xlsx',banks.bank_export,name='bank_export'),
