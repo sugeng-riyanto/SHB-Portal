@@ -137,3 +137,9 @@ class IntegrationConfig(models.Model):
     encrypted_secrets = models.BinaryField(null=True, blank=True)
     active = models.BooleanField(default=False)
     updated_at = models.DateTimeField(auto_now=True)
+
+class ProofComment(models.Model):
+    proof = models.ForeignKey(TransferProof, on_delete=models.PROTECT, related_name='comments')
+    sender = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT)
+    body = models.TextField(max_length=1000)
+    created_at = models.DateTimeField(auto_now_add=True)
