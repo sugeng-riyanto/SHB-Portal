@@ -682,3 +682,38 @@ class DashboardAccessTests(TestCase):
             self.assertEqual(client.post('/announcements/new/',fields,secure=True,HTTP_ORIGIN=origin).status_code,302)
             announcement=SchoolAnnouncement.objects.get(title='Example')
             self.assertEqual(client.post(f'/announcements/{announcement.pk}/submit/',{'csrfmiddlewaretoken':token},secure=True,HTTP_ORIGIN=origin).status_code,302)
+
+    def test_student_xlsx_template_preview_commit_and_duplicate(self):
+        from io import BytesIO
+        from django.core.files.uploadedfile import SimpleUploadedFile
+        from openpyxl import load_workbook
+        admin=get_user_model().objects.create_user(username='xlsx-students-admin',password='long-test-password')
+        Membership.objects.create(user=admin,school=self.school,role='admin')
+        self.client.force_login(admin)
+        template=self.client.get('/students/template.xlsx');self.assertEqual(template.status_code,200)
+        book=load_workbook(BytesIO(template.content));book.active.append(['00088','New student'])
+        stream=BytesIO();book.save(stream)
+        response=self.client.post('/students/import/',{'school':self.school.pk,'file':SimpleUploadedFile('students.xlsx',stream.getvalue())})
+        self.assertContains(response,'00088');self.assertFalse(Student.objects.filter(nis='00088').exists())
+        token=self.client.session['student_import_preview']['token']
+        self.assertEqual(self.client.post('/students/import/commit/',{'token':token}).status_code,302)
+        self.assertTrue(Student.objects.filter(school=self.school,nis='00088').exists())
+        self.assertEqual(self.client.post('/students/import/commit/',{'token':token}).status_code,400)
+        response=self.client.post('/students/import/',{'school':self.school.pk,'file':SimpleUploadedFile('students.xlsx',stream.getvalue())})
+        self.assertContains(response,'NIS sudah ada')
+    def test_student_import_scope_and_numeric_nis(self):
+        from io import BytesIO
+        from django.core.files.uploadedfile import SimpleUploadedFile
+        from openpyxl import load_workbook
+        admin=get_user_model().objects.create_user(username='xlsx-isolated',password='long-test-password')
+        Membership.objects.create(user=admin,school=self.school,role='admin')
+        self.client.force_login(admin)
+        book=load_workbook(BytesIO(self.client.get('/students/template.xlsx').content));book.active.append([123,'Student'])
+        stream=BytesIO();book.save(stream)
+        upload=lambda:SimpleUploadedFile('students.xlsx',stream.getvalue())
+        self.assertEqual(self.client.post('/students/import/',{'school':self.other_school.pk,'file':upload()}).status_code,404)
+        response=self.client.post('/students/import/',{'school':self.school.pk,'file':upload()})
+        self.assertContains(response,'NIS wajib berupa teks')
+        self.assertNotIn('student_import_preview',self.client.session)
+        self.client.force_login(self.guardian)
+        self.assertEqual(self.client.get('/students/template.xlsx').status_code,404)
