@@ -72,3 +72,6 @@ Landing page menggunakan bahasa yang lebih hangat; halaman /kabar-sekolah/ menam
 
 ## Bahasa
 Default English dan pilihan English/Indonesia/Mandarin Tradisional pada bagian landing, navigasi, login dan dashboard dasar. Terjemahan masih parsial: formulir Django, teks dinamis, pengumuman, email, beberapa halaman fitur, tombol tema dan pesan validasi belum seluruhnya diterjemahkan; jangan klaim bilingual lengkap. CSS/JS tetap lokal.
+
+## Bukti transfer: edit dan tarik
+Wali pemilik dengan relasi aktif dapat mengubah nominal/tanggal/foto dan menarik bukti pending. Bukti diverifikasi tidak dapat diubah/ditarik; uji pemilik dan wali lain lulus di SQLite. Riwayat perubahan field/audit, validasi konkurensi PostgreSQL, storage terenkripsi, seluruh RBAC/CRUD dan terjemahan tetap belum lengkap.
