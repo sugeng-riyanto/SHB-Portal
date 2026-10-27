@@ -1,7 +1,7 @@
 from django.contrib import admin
 from django.contrib.auth import views as auth_views
 from django.urls import path, include
-from portal import views, students, banks, messaging, account
+from portal import views, students, banks, messaging, account, integrations
 urlpatterns = [
     path("i18n/", include("django.conf.urls.i18n")),
     path('admin/', admin.site.urls), path('',views.home,name='home'),
@@ -22,7 +22,9 @@ urlpatterns = [
     path('students/<int:student_id>/deactivate/',students.student_deactivate,name='student_deactivate'),
     path('imports/', views.import_preview, name='import_preview'),
     path('proofs/', views.proofs_list, name='proofs_list'),
-    path('superadmin/integrations/', views.integration_settings, name='integration_settings'),
+    path('superadmin/integrations/', integrations.index, name='integration_settings'),
+    path('superadmin/integrations/<str:provider>/', integrations.edit, name='integration_edit'),
+    path('superadmin/integrations/<str:provider>/remove/', integrations.remove, name='integration_remove'),
     path('invoices/<int:invoice_id>/proof/', views.proof_upload, name='proof_upload'),
     path('proofs/<int:proof_id>/image/', views.proof_image, name='proof_image'),
     path('proofs/<int:proof_id>/edit/', views.proof_edit, name='proof_edit'),
