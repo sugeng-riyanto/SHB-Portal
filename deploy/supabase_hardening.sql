@@ -12,7 +12,7 @@ DECLARE
         'portal_school', 'portal_membership', 'portal_academicyear',
         'portal_classroom', 'portal_classroom_teachers', 'portal_student',
         'portal_student_guardians', 'portal_enrollment', 'portal_invoice',
-        'portal_payment', 'portal_schoolupdate', 'portal_userprofile', 'portal_message', 'portal_bankaccount', 'portal_transferproof', 'auth_user', 'auth_user_groups',
+        'portal_payment', 'portal_integrationconfig', 'portal_schoolupdate', 'portal_userprofile', 'portal_message', 'portal_bankaccount', 'portal_transferproof', 'auth_user', 'auth_user_groups',
         'auth_user_user_permissions', 'auth_group', 'auth_group_permissions',
         'auth_permission', 'django_session', 'django_admin_log',
         'django_content_type', 'django_migrations'
