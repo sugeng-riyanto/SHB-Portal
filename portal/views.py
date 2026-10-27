@@ -1,5 +1,6 @@
 from django.contrib.auth.decorators import login_required
 from django.db.models import Count, Sum
+from django.db.models.functions import TruncMonth
 from django.shortcuts import render
 from .access import aggregate_invoices, scoped_invoices
 from .models import Membership
@@ -35,8 +36,14 @@ def dashboard(request):
     linked_students = set(request.user.linked_students.values_list('id', flat=True))
     for invoice in invoices:
         invoice.may_upload_proof = invoice.enrollment.student.school_id in guardian_schools and invoice.enrollment.student_id in linked_students and not invoice.cancelled
-    summary = aggregate_invoices(request.user).aggregate(count=Count('id'), total=Sum('amount'))
-    return render(request, 'portal/dashboard.html', {'memberships': memberships, 'invoices': invoices, 'summary': summary})
+    aggregate_query = aggregate_invoices(request.user)
+    summary = aggregate_query.aggregate(count=Count('id'), total=Sum('amount'))
+    # Leadership aggregate and individual scopes remain separate; no student names in chart.
+    chart_query = aggregate_query if aggregate_query.exists() else scoped_invoices(request.user).filter(cancelled=False)
+    months = list(chart_query.annotate(month=TruncMonth('due_date')).values('month').annotate(count=Count('id')).order_by('month')[:24])
+    maximum = max((m['count'] for m in months), default=1)
+    for month in months: month['width'] = round(100 * month['count'] / maximum)
+    return render(request, 'portal/dashboard.html', {'memberships': memberships, 'invoices': invoices, 'summary': summary, 'months': months})
 
 from django.http import HttpResponse, HttpResponseForbidden
 from .imports import ImportErrorDetail, preview_xlsx, template_bytes, MAX_BYTES
