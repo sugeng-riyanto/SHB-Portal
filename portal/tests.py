@@ -237,3 +237,37 @@ class DashboardAccessTests(TestCase):
         response=self.client.get(f'/proofs/{proof.pk}/image/')
         self.assertEqual(response['Cache-Control'],'private, no-store')
         self.assertEqual(response['X-Content-Type-Options'],'nosniff')
+
+    def test_admin_email_and_guardian_inbox(self):
+        from django.core import mail
+        from django.test import override_settings
+        from .models import Message
+        admin=get_user_model().objects.create_user(username='mailadmin',password='long-test-password')
+        Membership.objects.create(user=admin,school=self.school,role='admin')
+        self.guardian.email='parent@example.test';self.guardian.save()
+        self.client.force_login(admin)
+        with override_settings(SHB_EMAIL_ENABLED=True,EMAIL_BACKEND='django.core.mail.backends.locmem.EmailBackend',DEFAULT_FROM_EMAIL='school@example.test'):
+            response=self.client.post('/messages/compose/',{'school':self.school.pk,'recipient':self.guardian.pk,'subject':'Informasi','body':'Halo wali'})
+            self.assertEqual(response.status_code,302)
+            self.assertEqual(len(mail.outbox),1)
+            self.assertEqual(mail.outbox[0].to,['parent@example.test'])
+            self.assertEqual(Message.objects.get().email_status,'sent')
+        self.client.force_login(self.guardian)
+        self.assertContains(self.client.get('/messages/inbox/'),'Halo wali')
+        self.client.force_login(self.other)
+        self.assertNotContains(self.client.get('/messages/inbox/'),'Halo wali')
+    def test_email_failure_and_wrong_school_recipient(self):
+        from django.test import override_settings
+        from .models import Message
+        admin=get_user_model().objects.create_user(username='mailadmin2',password='long-test-password')
+        Membership.objects.create(user=admin,school=self.other_school,role='admin')
+        self.guardian.email='parent@example.test';self.guardian.save()
+        self.client.force_login(admin)
+        self.client.post('/messages/compose/',{'school':self.other_school.pk,'recipient':self.guardian.pk,'subject':'private','body':'message'})
+        self.assertEqual(Message.objects.count(),0)
+        Membership.objects.create(user=admin,school=self.school,role='admin')
+        with override_settings(SHB_EMAIL_ENABLED=False):
+            self.client.post('/messages/compose/',{'school':self.school.pk,'recipient':self.guardian.pk,'subject':'private','body':'message'})
+        self.assertEqual(Message.objects.get().email_status,'failed')
+        self.client.force_login(self.teacher)
+        self.assertEqual(self.client.get('/messages/compose/').status_code,404)
