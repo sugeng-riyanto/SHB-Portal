@@ -78,3 +78,6 @@ Wali pemilik dengan relasi aktif dapat mengubah nominal/tanggal/foto dan menarik
 
 ## Validasi XLSX tambahan
 Preview XLSX kini memeriksa format email, tanggal ISO dan referensi tagihan duplikat di dalam file. Uji khusus lulus; validasi belum memastikan kepemilikan email/kelas/bank, belum melakukan commit tagihan atau pengiriman massal. Pengujian 43 tes Django sebelumnya lulus pada SQLite; tidak membuktikan Supabase, SMTP nyata, maupun seluruh release gates.
+
+## CRUD konfigurasi integrasi super admin
+Super admin dapat menyimpan, membaca status, mengubah, dan menghapus konfigurasi Supabase, SMTP, Midtrans. Secret disimpan terenkripsi Fernet dengan SHB_INTEGRATION_ENCRYPTION_KEY dari environment; jika kunci hilang data tidak dapat dibaca dan perlu dimasukkan ulang, sehingga kunci dan backup harus dikelola aman. Secret tidak ditampilkan dalam form. Pengaturan UI ini belum digunakan untuk koneksi SMTP, Supabase Auth, DB atau Midtrans, dan belum ada tes koneksi, audit, MFA, rotasi kunci, uji Postgres/produksi; active adalah status konfigurasi bukan integrasi aktif. Tiga tes terarah lulus lokal. Jangan gunakan kredensial nyata sebelum pengamanan dan staging lengkap.
