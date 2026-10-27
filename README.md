@@ -83,3 +83,6 @@ Untuk SMTP, isi environment server sesuai panduan, lalu aktifkan `SHB_EMAIL_ENAB
 - Konfigurasi HTTPS, hosting static files (`collectstatic`), proses server dan uji staging sebelum rilis.
 
 Baca [konstitusi proyek](docs/PROJECT_CONSTITUTION.md), [matriks RBAC](docs/RBAC_MATRIX.md), [pelindungan data](docs/PRIVACY_PDP.md), [release gates](docs/RELEASE_GATES.md), dan [status pekerjaan](docs/AI_HANDOFF.md).
+
+### Akun demo lokal
+Setelah migrasi, jalankan `python manage.py seed_demo` untuk membuat akun uji pada SQLite development. Email login: `superadmin@shb.sch.id`, `admin@shb.sch.id`, `kepala@shb.sch.id`, `yayasan@shb.sch.id`, `walikelas@shb.sch.id`, dan `ortu@shb.sch.id`; password dummy: `DemoSHB!2026`. Perintah tidak mengubah akun yang sudah ada, tidak mengisi data murid, dan ditolak di lingkungan produksi maupun PostgreSQL. Jangan gunakan akun/password ini pada server publik.
