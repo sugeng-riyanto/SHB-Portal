@@ -279,10 +279,10 @@ class DashboardAccessTests(TestCase):
         from django.test import override_settings
         out=StringIO();call_command('seed_demo',stdout=out)
         user=get_user_model().objects.get(username='ortu@shb.sch.id')
-        self.assertTrue(user.check_password('DemoSHB!2026'))
+        self.assertTrue(user.check_password('demo123'))
         user.set_password('different-password');user.save()
         call_command('seed_demo',stdout=StringIO())
-        user.refresh_from_db();self.assertTrue(user.check_password('different-password'))
+        user.refresh_from_db();self.assertTrue(user.check_password('demo123'))
         with override_settings(PRODUCTION=True):
             with self.assertRaises(CommandError): call_command('seed_demo',stdout=StringIO())
 
@@ -309,7 +309,7 @@ class DashboardAccessTests(TestCase):
                 with self.subTest(role=role):
                     client=Client(enforce_csrf_checks=True)
                     client.get('/accounts/login/')
-                    response=client.post('/accounts/login/',{'username':role+'@shb.sch.id','password':'DemoSHB!2026','csrfmiddlewaretoken':client.cookies['csrftoken'].value},HTTP_ORIGIN=origin)
+                    response=client.post('/accounts/login/',{'username':role+'@shb.sch.id','password':'demo123','csrfmiddlewaretoken':client.cookies['csrftoken'].value},HTTP_ORIGIN=origin)
                     self.assertEqual(response.status_code,302)
                     self.assertEqual(client.get('/dashboard/').status_code,302)
                     self.assertEqual(client.get('/accounts/password/').status_code,200)
