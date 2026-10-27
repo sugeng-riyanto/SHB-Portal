@@ -4,8 +4,25 @@ from django.shortcuts import render
 from .access import aggregate_invoices, scoped_invoices
 from .models import Membership
 
+def public_information():
+    import os
+    from urllib.parse import urlsplit
+    from django.utils import timezone
+    from .models import SchoolUpdate
+    social=[]
+    for label, key in [('Instagram','SHB_INSTAGRAM_URL'),('Facebook','SHB_FACEBOOK_URL'),('YouTube','SHB_YOUTUBE_URL')]:
+        url=os.environ.get(key,'').strip()
+        parsed=urlsplit(url)
+        if parsed.scheme == 'https' and parsed.netloc and not parsed.username and not parsed.password:
+            social.append({'label':label,'url':url})
+    updates=SchoolUpdate.objects.filter(published=True,published_at__isnull=False,published_at__lte=timezone.now())
+    return {'school_updates':updates[:6], 'social_links':social}
+
 def home(request):
-    return render(request, 'portal/home.html')
+    return render(request, 'portal/home.html', public_information())
+
+def school_news(request):
+    return render(request, 'portal/school_news.html', public_information())
 
 @login_required
 def dashboard(request):

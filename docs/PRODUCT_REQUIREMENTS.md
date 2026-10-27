@@ -52,3 +52,6 @@ Wali memilih anak/tagihan, menyalin VA, unggah foto, isi nominal dan tanggal. Pe
 
 ## Dashboard dan batas tagihan
 Semua dashboard, sidebar dan menu mengikuti matriks RBAC_MATRIX.md; alert jatuh tempo dan terlambat dibatasi scope. Tombol WhatsApp admin selalu tersedia, memakai nomor resmi yang diatur dan diverifikasi sekolah. Alur chat pengguna terpisah dari pengiriman otomatis. Nilai hari sebelum jatuh tempo belum ditetapkan.
+
+## Alur utama pengiriman massal (penegasan)
+Admin mengunggah XLSX, memeriksa dan memperbaiki baris, lalu memilih semua penerima, kelas, kelompok khusus atau individu. Tampilkan daftar/jumlah penerima, personalisasi, kesalahan dan kanal sebelum tombol kirim; setelah konfirmasi, sistem mengantre pengiriman individual secara terkendali dan menampilkan pending/sent/failed per penerima. Wali yang memiliki beberapa anak tidak boleh menerima data anak yang tidak terhubung; deduplikasi ditentukan per wali dan konten tagihan agar data berbeda tidak hilang. Semua proses harus idempotent, menghormati batas SMTP, bisa menangani kegagalan dan tidak mengirim tanpa tindakan admin. Status inbox, email dan WhatsApp berbeda. Saat ini impor final, grup, preview kirim, antrean dan pengiriman massal belum diimplementasikan; hanya pesan individual dan preview awal XLSX tersedia.

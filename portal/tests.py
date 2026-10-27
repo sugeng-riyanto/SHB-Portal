@@ -282,10 +282,10 @@ class DashboardAccessTests(TestCase):
         from django.test import override_settings
         out=StringIO();call_command('seed_demo',stdout=out)
         user=get_user_model().objects.get(username='ortu@shb.sch.id')
-        self.assertTrue(user.check_password('DemoSHB!2026'))
+        self.assertTrue(user.check_password('demo123'))
         user.set_password('different-password');user.save()
         call_command('seed_demo',stdout=StringIO())
-        user.refresh_from_db();self.assertTrue(user.check_password('different-password'))
+        user.refresh_from_db();self.assertTrue(user.check_password('demo123'))
         with override_settings(PRODUCTION=True):
             with self.assertRaises(CommandError): call_command('seed_demo',stdout=StringIO())
 
@@ -315,9 +315,64 @@ class DashboardAccessTests(TestCase):
                 with self.subTest(role=role):
                     client=Client(enforce_csrf_checks=True)
                     client.get('/accounts/login/')
-                    response=client.post('/accounts/login/',{'username':role+'@shb.sch.id','password':'DemoSHB!2026','csrfmiddlewaretoken':client.cookies['csrftoken'].value},HTTP_ORIGIN=origin)
-                    self.assertRedirects(response,'/dashboard/')
-                    self.assertEqual(client.get('/dashboard/').status_code,200)
+                    response=client.post('/accounts/login/',{'username':role+'@shb.sch.id','password':'demo123','csrfmiddlewaretoken':client.cookies['csrftoken'].value},HTTP_ORIGIN=origin)
+                    self.assertEqual(response.status_code,302)
+                    self.assertEqual(client.get('/dashboard/').status_code,302)
+                    self.assertEqual(client.get('/accounts/password/').status_code,200)
+
+    def test_class_recipient_selection_deduplicates_and_isolates(self):
+        from .recipients import class_recipients
+        admin=get_user_model().objects.create_user(username='bulkadmin',password='long-test-password')
+        Membership.objects.create(user=admin,school=self.school,role='admin')
+        self.guardian.email='parent@example.test';self.guardian.save()
+        second=Student.objects.create(school=self.school,nis='002',name='SECOND CHILD')
+        second.guardians.add(self.guardian)
+        Enrollment.objects.create(student=second,classroom=self.classroom)
+        recipients=list(class_recipients(admin,self.classroom.pk))
+        self.assertEqual([u.pk for u in recipients],[self.guardian.pk])
+        self.assertFalse(class_recipients(self.other,self.classroom.pk).exists())
+        self.assertFalse(class_recipients(self.teacher,self.classroom.pk).exists())
+
+    def test_first_login_requires_password_change_and_preserves_session(self):
+        user=get_user_model().objects.create_user(username='first',password='Old-password-987!')
+        self.assertTrue(self.client.login(username='first',password='Old-password-987!'))
+        # Actual login view provisions a first-login profile.
+        self.client.logout()
+        self.client.post('/accounts/login/',{'username':'first','password':'Old-password-987!'})
+        self.assertRedirects(self.client.get('/dashboard/'),'/accounts/password/')
+        response=self.client.post('/accounts/password/',{'old_password':'Old-password-987!','new_password1':'Fresh-password-654!','new_password2':'Fresh-password-654!'})
+        self.assertEqual(response.status_code,302)
+        self.assertEqual(self.client.get('/dashboard/').status_code,200)
+        user.refresh_from_db();self.assertTrue(user.check_password('Fresh-password-654!'))
+    def test_user_cannot_see_other_profile_photo(self):
+        from .models import UserProfile
+        UserProfile.objects.create(user=self.guardian,must_change_password=False,photo=b'secret',photo_type='png')
+        self.client.force_login(self.other)
+        self.assertEqual(self.client.get('/accounts/profile/photo/').status_code,404)
+    def test_login_has_local_password_toggle(self):
+        response=self.client.get('/accounts/login/')
+        self.assertContains(response,'data-password-target="id_password"')
+        self.assertContains(response,'csrfmiddlewaretoken')
+
+    def test_school_news_only_published_and_current(self):
+        from datetime import timedelta
+        from django.utils import timezone
+        from .models import SchoolUpdate
+        SchoolUpdate.objects.create(title='Published news',body='School news',published=True,published_at=timezone.now()-timedelta(days=1))
+        SchoolUpdate.objects.create(title='PRIVATE DRAFT',body='Draft',published=False,published_at=timezone.now())
+        SchoolUpdate.objects.create(title='FUTURE NEWS',body='Future',published=True,published_at=timezone.now()+timedelta(days=1))
+        for url in ('/','/kabar-sekolah/'):
+            response=self.client.get(url)
+            self.assertContains(response,'Published news')
+            self.assertNotContains(response,'PRIVATE DRAFT')
+            self.assertNotContains(response,'FUTURE NEWS')
+    def test_social_links_require_https_and_open_safely(self):
+        from unittest.mock import patch
+        with patch.dict('os.environ',{'SHB_INSTAGRAM_URL':'https://instagram.com/example','SHB_YOUTUBE_URL':'javascript:alert(1)'}):
+            response=self.client.get('/')
+            self.assertContains(response,'https://instagram.com/example')
+            self.assertContains(response,'rel="noopener noreferrer"')
+            self.assertNotContains(response,'javascript:alert(1)')
 class SeedDemoCommandTests(TestCase):
     def setUp(self):
         from django.db import connection

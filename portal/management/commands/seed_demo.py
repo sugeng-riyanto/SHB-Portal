@@ -8,8 +8,9 @@ this command, and never expose these accounts outside a development machine.
 
 Creates demo accounts that can sign in, together with example classes, students,
 invoices and a bank account so the preview has something to render. Running it again
-only fills in what is missing: an existing user keeps its current password and nothing
-already stored is overwritten. The command refuses to run unless the database is a
+fills in only what is missing and resets the password of the six reserved demo
+accounts to the requested demo password; accounts with a different email are never
+touched. The command refuses to run unless the database is a
 SQLite development database and settings.PRODUCTION is off.
 """
 from datetime import date
@@ -32,7 +33,7 @@ from portal.models import (
 
 DEMO_SCHOOL_NAME = 'Sekolah Harapan Bangsa (contoh)'
 DEMO_YEAR_LABEL = '2026/2027'
-DEMO_PASSWORD = 'DemoSHB!2026'
+DEMO_PASSWORD = 'demo123'
 # (username, role): role None means the portal superuser.
 DEMO_ACCOUNTS = (
     ('superadmin@shb.sch.id', None),
@@ -72,7 +73,7 @@ class Command(BaseCommand):
         parser.add_argument(
             '--password',
             default=DEMO_PASSWORD,
-            help='Kata sandi untuk akun contoh yang baru dibuat. Gunakan kata sandi demo saja.',
+            help='Kata sandi untuk keenam akun demo, disetel ulang setiap kali dijalankan.',
         )
 
     def handle(self, *args, **options):
@@ -94,23 +95,25 @@ class Command(BaseCommand):
 
             users = {}
             for username, role in DEMO_ACCOUNTS:
-                # Never overwrite an existing user or its password.
+                # The six reserved demo accounts are reset on purpose: the owner asked
+                # for this fixed demo password. An account whose email differs from the
+                # username is a real account, so it is never touched.
                 user, is_new = User.objects.get_or_create(
                     username=username, defaults={'email': username})
-                if is_new:
-                    user.set_password(options['password'])
-                    if role is None:
-                        user.is_staff = True
-                        user.is_superuser = True
-                    user.save()
-                    created.append(f'akun {username}')
-                else:
-                    self.stdout.write(f'{username}: sudah ada; tidak diubah')
+                if not is_new and user.email != username:
+                    raise CommandError(
+                        f'{username}: akun yang sudah ada memakai email lain; tidak diubah')
+                user.set_password(options['password'])
+                if role is None:
+                    user.is_staff = True
+                    user.is_superuser = True
+                user.save()
                 users[username] = user
+                self.stdout.write(
+                    f'{username}: dibuat' if is_new else f'{username}: password disetel ulang')
                 if role and Membership.objects.get_or_create(
                         user=user, school=school, role=role)[1]:
                     created.append(f'peran {username}/{role}')
-
             classrooms = {}
             for spec in DEMO_CLASSES:
                 classroom, is_new = Classroom.objects.get_or_create(

@@ -1,9 +1,10 @@
 from django.contrib import admin
 from django.contrib.auth import views as auth_views
 from django.urls import path
-from portal import views, students, banks, messaging
+from portal import views, students, banks, messaging, account
 urlpatterns = [
     path('admin/', admin.site.urls), path('',views.home,name='home'),
+    path('kabar-sekolah/',views.school_news,name='school_news'),
     path('dashboard/',views.dashboard,name='dashboard'),
     path('messages/compose/',messaging.compose,name='message_compose'),
     path('messages/history/',messaging.history,name='message_history'),
@@ -25,6 +26,9 @@ urlpatterns = [
     path('proofs/<int:proof_id>/image/', views.proof_image, name='proof_image'),
     path('proofs/<int:proof_id>/verify/', views.proof_verify, name='proof_verify'),
     path('imports/template.xlsx', views.xlsx_template, name='xlsx_template'),
-    path('accounts/login/',auth_views.LoginView.as_view(),name='login'),
+    path('accounts/login/',account.PortalLoginView.as_view(),name='login'),
+    path('accounts/profile/',account.profile,name='profile'),
+    path('accounts/profile/photo/',account.profile_photo,name='profile_photo'),
+    path('accounts/password/',account.change_password,name='change_password'),
     path('accounts/logout/',auth_views.LogoutView.as_view(),name='logout'),
 ]

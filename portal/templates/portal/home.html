@@ -1,24 +1,6 @@
 {% extends 'portal/base.html' %}{% block content %}
-<section class="hero landing-hero">
-  <div class="landing-copy">
-    <p class="eyebrow">PORTAL INFORMASI SEKOLAH &amp; ORANG TUA</p>
-    <h1>Informasi pembayaran,<br><span class="landing-accent">lebih mudah dan jelas.</span></h1>
-    <p class="lead">Satu tempat untuk melihat informasi pembayaran dan tetap terhubung dengan sekolah.</p>
-    <div class="landing-actions"><a class="button" href="{% url 'login' %}">Masuk ke portal <span aria-hidden="true">→</span></a></div>
-    <p class="landing-note">Gunakan akun yang telah disiapkan oleh sekolah untuk masuk.</p>
-  </div>
-  <div class="card hero-card landing-panel">
-    <p class="eyebrow">RINGKASAN PORTAL</p>
-    <h2>Semua informasi, dalam satu tempat.</h2>
-    <div class="landing-illustration" aria-hidden="true"><span></span><span></span><span></span><span></span><span></span><span></span></div>
-    <div class="landing-row"><strong>Tagihan dan riwayat</strong><span>Informasi terpusat</span></div>
-    <div class="landing-row"><strong>Komunikasi sekolah</strong><span>Lebih mudah</span></div>
-  </div>
-</section>
-<section class="landing-features" aria-label="Manfaat portal">
-  <article class="card landing-feature"><span class="feature-icon" aria-hidden="true">◎</span><h2>Informasi jelas</h2><p>Tagihan dan jatuh tempo dalam satu halaman.</p></article>
-  <article class="card landing-feature"><span class="feature-icon" aria-hidden="true">✉</span><h2>Komunikasi mudah</h2><p>Terhubung dengan informasi dari sekolah.</p></article>
-  <article class="card landing-feature"><span class="feature-icon" aria-hidden="true">◇</span><h2>Akses sesuai peran</h2><p>Informasi disesuaikan dengan akun Anda.</p></article>
-  <article class="card landing-feature"><span class="feature-icon" aria-hidden="true">▣</span><h2>Nyaman di perangkat</h2><p>Tampilan menyesuaikan ukuran layar.</p></article>
-</section>
+<section class="hero landing-hero"><div class="landing-copy"><p class="eyebrow">BERSAMA MENDUKUNG PERJALANAN ANAK</p><h1>Terhubung dengan sekolah,<br><span class="landing-accent">lebih tenang setiap hari.</span></h1><p class="lead">Bapak dan Ibu dapat mengikuti informasi pembayaran dan kabar sekolah di satu tempat, kapan pun dibutuhkan. Kami siap membantu jika ada hal yang ingin ditanyakan.</p><div class="landing-actions"><a class="button" href="{% url 'login' %}">Masuk ke portal <span aria-hidden="true">→</span></a><a class="landing-secondary" href="{% url 'school_news' %}">Lihat kabar sekolah</a></div><p class="landing-note">Gunakan akun yang telah disiapkan oleh sekolah untuk masuk.</p></div><div class="card hero-card landing-panel"><p class="eyebrow">UNTUK BAPAK DAN IBU</p><h2>Informasi yang jelas, komunikasi yang dekat.</h2><div class="landing-illustration" aria-hidden="true"><span></span><span></span><span></span><span></span><span></span><span></span></div><div class="landing-row"><strong>Informasi pembayaran</strong><span>Mudah dipantau</span></div><div class="landing-row"><strong>Terhubung dengan sekolah</strong><span>Kami siap membantu</span></div></div></section>
+<section class="landing-features" aria-label="Manfaat portal"><article class="card landing-feature"><span class="feature-icon" aria-hidden="true">◎</span><h2>Lebih jelas</h2><p>Temukan informasi pembayaran dan tanggal penting dengan mudah.</p></article><article class="card landing-feature"><span class="feature-icon" aria-hidden="true">✉</span><h2>Lebih dekat</h2><p>Ikuti informasi sekolah dan sampaikan pertanyaan kepada kami.</p></article><article class="card landing-feature"><span class="feature-icon" aria-hidden="true">◇</span><h2>Lebih personal</h2><p>Informasi pada akun disesuaikan dengan hubungan dan peran Anda.</p></article><article class="card landing-feature"><span class="feature-icon" aria-hidden="true">▣</span><h2>Lebih nyaman</h2><p>Akses portal melalui perangkat yang tersedia bagi Bapak dan Ibu.</p></article></section>
+<section class="news-section"><div class="news-heading"><div><p class="eyebrow">KABAR DARI SEKOLAH</p><h2>Terus terhubung dengan SHB</h2><p>Temukan informasi dan cerita terbaru dari sekolah.</p></div><a class="landing-secondary" href="{% url 'school_news' %}">Semua kabar →</a></div><div class="news-grid">{% for update in school_updates|slice:':3' %}<article class="card news-card"><time>{{ update.published_at|date:'d M Y' }}</time><h3>{{ update.title }}</h3><p>{{ update.body|truncatewords:25 }}</p></article>{% empty %}<div class="card"><h3>Belum ada kabar yang diterbitkan</h3><p>Informasi sekolah akan muncul di sini setelah diterbitkan.</p></div>{% endfor %}</div></section>
+<section class="card social-section"><h2>Mari tetap terhubung</h2><p>Ikuti kanal resmi sekolah untuk informasi dan kegiatan terbaru.</p>{% for link in social_links %}<a class="social-link" href="{{ link.url }}" target="_blank" rel="noopener noreferrer">{{ link.label }} ↗</a>{% empty %}<p>Alamat media sosial resmi akan ditambahkan oleh sekolah.</p>{% endfor %}</section>
 {% endblock %}
