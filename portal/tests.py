@@ -285,3 +285,15 @@ class DashboardAccessTests(TestCase):
         user.refresh_from_db();self.assertTrue(user.check_password('different-password'))
         with override_settings(PRODUCTION=True):
             with self.assertRaises(CommandError): call_command('seed_demo',stdout=StringIO())
+
+    def test_csrf_login_trusted_origin_and_untrusted_origin(self):
+        from django.test import Client, override_settings
+        user = get_user_model().objects.create_user(username='csrfuser',password='long-test-password')
+        client = Client(enforce_csrf_checks=True)
+        with override_settings(CSRF_TRUSTED_ORIGINS=['https://preview.example.test']):
+            client.get('/accounts/login/')
+            token = client.cookies['csrftoken'].value
+            response=client.post('/accounts/login/',{'username':user.username,'password':'long-test-password','csrfmiddlewaretoken':token},HTTP_ORIGIN='https://untrusted.example.test')
+            self.assertEqual(response.status_code,403)
+            response=client.post('/accounts/login/',{'username':user.username,'password':'long-test-password','csrfmiddlewaretoken':token},HTTP_ORIGIN='https://preview.example.test')
+            self.assertEqual(response.status_code,302)
