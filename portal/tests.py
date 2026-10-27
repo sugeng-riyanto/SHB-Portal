@@ -419,3 +419,35 @@ class DashboardAccessTests(TestCase):
         self.assertTrue(any('email_wali' in e for e in rows[0]['errors']))
         self.assertTrue(any('jatuh_tempo' in e for e in rows[0]['errors']))
         self.assertTrue(any('duplikat' in e for e in rows[1]['errors']))
+
+    def test_superadmin_integrations_encrypt_and_do_not_expose_secret(self):
+        from cryptography.fernet import Fernet
+        from unittest.mock import patch
+        from .models import IntegrationConfig
+        root=get_user_model().objects.create_superuser(username='integration-root',email='root@example.test',password='long-test-password')
+        self.client.force_login(root)
+        key=Fernet.generate_key().decode()
+        with patch.dict('os.environ', {'SHB_INTEGRATION_ENCRYPTION_KEY':key}):
+            response=self.client.post('/superadmin/integrations/smtp/',{'host':'smtp.gmail.com','port':'587','username':'school@example.test','from_email':'school@example.test','app_password':'test-secret-123','active':'on'})
+            self.assertEqual(response.status_code,302)
+            config=IntegrationConfig.objects.get(provider='smtp')
+            self.assertNotIn(b'test-secret-123',bytes(config.encrypted_secrets))
+            response=self.client.get('/superadmin/integrations/smtp/')
+            self.assertNotContains(response,'test-secret-123')
+            self.assertEqual(response['Cache-Control'],'private, no-store')
+            self.client.post('/superadmin/integrations/smtp/',{'host':'smtp.gmail.com','port':'587','username':'school@example.test','from_email':'school@example.test','app_password':'','active':'on'})
+            config.refresh_from_db()
+            self.assertIn(b'test-secret-123',Fernet(key.encode()).decrypt(bytes(config.encrypted_secrets)))
+            self.assertEqual(self.client.post('/superadmin/integrations/smtp/remove/').status_code,302)
+            self.assertFalse(IntegrationConfig.objects.exists())
+        self.client.force_login(self.guardian)
+        self.assertEqual(self.client.get('/superadmin/integrations/smtp/').status_code,404)
+    def test_integration_missing_encryption_key_does_not_save(self):
+        from unittest.mock import patch
+        from .models import IntegrationConfig
+        root=get_user_model().objects.create_superuser(username='nokey',email='root@example.test',password='long-test-password')
+        self.client.force_login(root)
+        with patch.dict('os.environ', {'SHB_INTEGRATION_ENCRYPTION_KEY':''}):
+            response=self.client.post('/superadmin/integrations/smtp/',{'host':'smtp.gmail.com','port':'587','username':'school@example.test','from_email':'school@example.test','app_password':'secret'})
+        self.assertContains(response,'belum disimpan')
+        self.assertFalse(IntegrationConfig.objects.exists())
