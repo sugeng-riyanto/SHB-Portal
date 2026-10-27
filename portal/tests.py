@@ -664,3 +664,21 @@ class DashboardAccessTests(TestCase):
         self.client.force_login(admin)
         response=self.client.post('/announcements/new/',{'school':self.school.pk,'title':'Activity','body':'Text','event_date':'2026-11-20','pdf_url':'http://example.test/a.pdf'})
         self.assertContains(response,'Use an HTTPS link.')
+
+    def test_announcement_actions_require_and_accept_csrf_tokens(self):
+        from django.test import Client, override_settings
+        from .models import SchoolAnnouncement
+        user=get_user_model().objects.create_user(username='csrf-announcement',password='test-password-987!')
+        Membership.objects.create(user=user,school=self.school,role='admin')
+        client=Client(enforce_csrf_checks=True);client.force_login(user)
+        origin='https://pv-ac9ad268c614-51b1306d-b202-4d34-b04b-346824493b23.style.dev'
+        with override_settings(CSRF_TRUSTED_ORIGINS=[origin]):
+            page=client.get('/announcements/new/',secure=True)
+            self.assertContains(page,'csrfmiddlewaretoken')
+            token=client.cookies['csrftoken'].value
+            fields={'school':self.school.pk,'title':'Example','body':'Example paragraph','event_date':'2026-11-20','pdf_url':''}
+            self.assertEqual(client.post('/announcements/new/',fields,secure=True,HTTP_ORIGIN=origin).status_code,403)
+            fields['csrfmiddlewaretoken']=token
+            self.assertEqual(client.post('/announcements/new/',fields,secure=True,HTTP_ORIGIN=origin).status_code,302)
+            announcement=SchoolAnnouncement.objects.get(title='Example')
+            self.assertEqual(client.post(f'/announcements/{announcement.pk}/submit/',{'csrfmiddlewaretoken':token},secure=True,HTTP_ORIGIN=origin).status_code,302)
