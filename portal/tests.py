@@ -310,8 +310,9 @@ class DashboardAccessTests(TestCase):
                     client=Client(enforce_csrf_checks=True)
                     client.get('/accounts/login/')
                     response=client.post('/accounts/login/',{'username':role+'@shb.sch.id','password':'DemoSHB!2026','csrfmiddlewaretoken':client.cookies['csrftoken'].value},HTTP_ORIGIN=origin)
-                    self.assertRedirects(response,'/dashboard/')
-                    self.assertEqual(client.get('/dashboard/').status_code,200)
+                    self.assertEqual(response.status_code,302)
+                    self.assertEqual(client.get('/dashboard/').status_code,302)
+                    self.assertEqual(client.get('/accounts/password/').status_code,200)
 
     def test_class_recipient_selection_deduplicates_and_isolates(self):
         from .recipients import class_recipients
@@ -325,3 +326,24 @@ class DashboardAccessTests(TestCase):
         self.assertEqual([u.pk for u in recipients],[self.guardian.pk])
         self.assertFalse(class_recipients(self.other,self.classroom.pk).exists())
         self.assertFalse(class_recipients(self.teacher,self.classroom.pk).exists())
+
+    def test_first_login_requires_password_change_and_preserves_session(self):
+        user=get_user_model().objects.create_user(username='first',password='Old-password-987!')
+        self.assertTrue(self.client.login(username='first',password='Old-password-987!'))
+        # Actual login view provisions a first-login profile.
+        self.client.logout()
+        self.client.post('/accounts/login/',{'username':'first','password':'Old-password-987!'})
+        self.assertRedirects(self.client.get('/dashboard/'),'/accounts/password/')
+        response=self.client.post('/accounts/password/',{'old_password':'Old-password-987!','new_password1':'Fresh-password-654!','new_password2':'Fresh-password-654!'})
+        self.assertEqual(response.status_code,302)
+        self.assertEqual(self.client.get('/dashboard/').status_code,200)
+        user.refresh_from_db();self.assertTrue(user.check_password('Fresh-password-654!'))
+    def test_user_cannot_see_other_profile_photo(self):
+        from .models import UserProfile
+        UserProfile.objects.create(user=self.guardian,must_change_password=False,photo=b'secret',photo_type='png')
+        self.client.force_login(self.other)
+        self.assertEqual(self.client.get('/accounts/profile/photo/').status_code,404)
+    def test_login_has_local_password_toggle(self):
+        response=self.client.get('/accounts/login/')
+        self.assertContains(response,'data-password-target="id_password"')
+        self.assertContains(response,'csrfmiddlewaretoken')
