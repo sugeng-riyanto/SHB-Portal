@@ -367,3 +367,12 @@ class DashboardAccessTests(TestCase):
             self.assertContains(response,'https://instagram.com/example')
             self.assertContains(response,'rel="noopener noreferrer"')
             self.assertNotContains(response,'javascript:alert(1)')
+
+    def test_home_redirects_signed_in_users_to_dashboard(self):
+        self.client.force_login(self.guardian)
+        self.assertRedirects(self.client.get('/'),'/dashboard/')
+    def test_login_lands_on_dashboard_even_if_next_provided(self):
+        user=get_user_model().objects.create_user(username='landing-user',password='Old-password-987!')
+        response=self.client.post('/accounts/login/?next=/kabar-sekolah/',{'username':user.username,'password':'Old-password-987!'})
+        self.assertEqual(response.status_code,302)
+        self.assertEqual(response['Location'],'/dashboard/')
