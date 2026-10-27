@@ -17,3 +17,13 @@
     try { localStorage.setItem('shb-theme', theme); } catch (_) {}
   });
 })();
+document.querySelectorAll('[data-password-target]').forEach((button) => {
+  button.addEventListener('click', () => {
+    const field = document.getElementById(button.dataset.passwordTarget);
+    if (!field) return;
+    const show = field.type === 'password';
+    field.type = show ? 'text' : 'password';
+    button.setAttribute('aria-pressed', String(show));
+    button.textContent = show ? '◉ Sembunyikan password' : '👁 Tampilkan password';
+  });
+});
