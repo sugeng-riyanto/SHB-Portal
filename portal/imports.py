@@ -1,5 +1,8 @@
 """Bounded XLSX preview. No database mutations occur here."""
 from io import BytesIO
+from datetime import date, datetime
+from django.core.exceptions import ValidationError
+from django.core.validators import validate_email
 from zipfile import BadZipFile, ZipFile
 from openpyxl import load_workbook, Workbook
 
@@ -40,6 +43,7 @@ def preview_xlsx(data):
             if header[:len(HEADERS)] != HEADERS:
                 raise ImportErrorDetail('Kolom tidak sesuai template.')
             results = []
+            seen_references = set()
             for row_number, cells in enumerate(rows, start=2):
                 cells = cells[:len(HEADERS)]
                 if all(c.value is None for c in cells):
@@ -60,6 +64,24 @@ def preview_xlsx(data):
                         continue
                     if isinstance(v, bool) or not isinstance(v, int) or v < 0:
                         errors.append(f'{HEADERS[i]} harus bilangan bulat rupiah nonnegatif.')
+                email = values[3]
+                if email:
+                    try:
+                        validate_email(str(email).strip())
+                    except ValidationError:
+                        errors.append('email_wali tidak valid.')
+                due = values[10]
+                if due and not isinstance(due, (date, datetime)):
+                    try:
+                        date.fromisoformat(str(due).strip())
+                    except ValueError:
+                        errors.append('jatuh_tempo harus berformat YYYY-MM-DD.')
+                reference = values[11]
+                if isinstance(reference, str) and reference.strip():
+                    reference = reference.strip()
+                    if reference in seen_references:
+                        errors.append('referensi_tagihan duplikat dalam file.')
+                    seen_references.add(reference)
                 results.append({'row':row_number,'nis':str(values[0] or ''),'errors':errors})
             return results
         finally:

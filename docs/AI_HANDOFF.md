@@ -117,6 +117,10 @@ Default English dan pilihan English/Indonesia/Mandarin Tradisional pada bagian l
 
 ## Bukti transfer: edit dan tarik
 Wali pemilik dengan relasi aktif dapat mengubah nominal/tanggal/foto dan menarik bukti pending. Bukti diverifikasi tidak dapat diubah/ditarik; uji pemilik dan wali lain lulus di SQLite. Riwayat perubahan field/audit, validasi konkurensi PostgreSQL, storage terenkripsi, seluruh RBAC/CRUD dan terjemahan tetap belum lengkap.
+
+## Validasi XLSX tambahan
+Preview XLSX kini memeriksa format email, tanggal ISO dan referensi tagihan duplikat di dalam file. Uji khusus lulus; validasi belum memastikan kepemilikan email/kelas/bank, belum melakukan commit tagihan atau pengiriman massal. Pengujian 43 tes Django sebelumnya lulus pada SQLite; tidak membuktikan Supabase, SMTP nyata, maupun seluruh release gates.
+
 ## Tarik main terbaru dan verifikasi CSRF preview — 27 Oktober 2026
 Main ditarik lagi: satu commit baru `5b943e8` (Test demo role logins with CSRF enforcement) di-merge ke branch ini sebagai `37b6611`; konflik hanya pada `portal/tests.py` dan diselesaikan dengan menjaga kedua sisi. Tes baru itu memanggil `seed_demo`, jadi guard pemeriksaan SQLite yang sama ditambahkan agar tidak gagal pada PostgreSQL. Hasil: 37 tes Django lulus pada SQLite (2 skip) dan pada PostgreSQL 16.2 (5 skip), 5 tes domain lulus; `migrate` tanpa migrasi baru.
 
@@ -238,3 +242,7 @@ Validasi tanpa runner: `actionlint` 1.7.10 melaporkan **0 masalah** untuk workfl
 Yang belum bisa dilakukan dari VM ini: **run pertama belum ada**, karena PR untuk branch ini belum dibuka (`refs/pull/1` dan `refs/pull/2` milik `foundation/domain-and-plan` dan `feature/django-foundation`), dan pemicu `push` hanya untuk `main`. Membaca status/log run juga tidak mungkin: `gh` tidak terautentikasi, `git credential fill` tidak mengembalikan kredensial (hanya transport git yang terautentikasi), dan API `api.github.com` tanpa token kena rate limit dari IP bersama (403). Jadi "mengawasi run" menunggu PR dibuka dan akses Actions dibaca dari sini.
 
 Risiko: major v7 belum pernah dieksekusi di runner GitHub sungguhan, jadi perilaku runner (image, cache pip, unduhan action) tetap belum terbukti; action masih dipin ke tag major, bukan SHA commit; belum ada lint Python, `collectstatic` maupun coverage.
+
+
+## Merge origin/main 5866f36: validasi XLSX — 27 Oktober 2026
+`origin/main` bergerak tiga commit ke `5866f36` ("Validate email, due dates and duplicate import references") yang menyentuh `portal/imports.py` (+22), `portal/tests.py` (+13) dan `docs/AI_HANDOFF.md` (+3); tanpa migrasi baru. Merge dijalankan terhadap `FETCH_HEAD` dan menghasilkan konflik isi di dua berkas, keduanya penambahan di ujung berkas: `portal/tests.py` mempertahankan tes upstream `test_xlsx_invalid_email_date_and_duplicate_reference` di dalam `DashboardAccessTests` lalu menaruh `SeedDemoCommandTests` dan `ConcurrentProofVerificationTests` milik branch ini setelahnya; `docs/AI_HANDOFF.md` menaruh bagian upstream `## Validasi XLSX tambahan` lebih dulu, lalu catatan branch ini. Resolver menolak menulis bila jumlah penanda bukan tepat tiga, ada isi setelah penanda penutup, atau salah satu sisi kosong; `ast.parse` dan pemeriksaan keanggotaan kelas mengonfirmasi tes upstream berada di dalam `DashboardAccessTests`.
