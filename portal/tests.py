@@ -203,3 +203,29 @@ class DashboardAccessTests(TestCase):
         rows=list(load_workbook(BytesIO(response.content)).active.values)
         self.assertIn(('SHB','00009',"'=1+1",'Aktif'),rows)
         self.assertFalse(any('PRIVATE' in row for row in rows))
+
+    def test_bank_crud_principal_scope_and_export(self):
+        from io import BytesIO
+        from openpyxl import load_workbook
+        from .models import BankAccount
+        principal=get_user_model().objects.create_user(username='bank-principal',password='long-test-password')
+        Membership.objects.create(user=principal,school=self.school,role='principal')
+        external=BankAccount.objects.create(school=self.other_school,bank_name='Other',account_name='Private',account_number='098')
+        self.client.force_login(principal)
+        response=self.client.post('/banks/new/',{'school':self.school.pk,'bank_name':'Bank','account_name':'SHB','account_number':'00123','active':'on'})
+        self.assertEqual(response.status_code,302)
+        bank=BankAccount.objects.get(account_number='00123')
+        self.assertEqual(self.client.get(f'/banks/{external.pk}/edit/').status_code,404)
+        self.assertNotContains(self.client.get('/banks/'),'Private')
+        rows=list(load_workbook(BytesIO(self.client.get('/banks/export.xlsx').content)).active.values)
+        self.assertTrue(any('00123' in row for row in rows))
+        self.assertFalse(any('Private' in row for row in rows))
+        self.assertEqual(self.client.post(f'/banks/{bank.pk}/deactivate/').status_code,302)
+        bank.refresh_from_db();self.assertFalse(bank.active)
+    def test_guardian_and_admin_cannot_manage_banks(self):
+        self.client.force_login(self.guardian)
+        self.assertEqual(self.client.get('/banks/').status_code,404)
+        admin=get_user_model().objects.create_user(username='bank-admin',password='long-test-password')
+        Membership.objects.create(user=admin,school=self.school,role='admin')
+        self.client.force_login(admin)
+        self.assertEqual(self.client.get('/banks/').status_code,404)
