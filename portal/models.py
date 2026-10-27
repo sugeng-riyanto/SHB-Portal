@@ -143,3 +143,19 @@ class ProofComment(models.Model):
     sender = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT)
     body = models.TextField(max_length=1000)
     created_at = models.DateTimeField(auto_now_add=True)
+
+class PaymentType(models.Model):
+    school = models.ForeignKey(School, on_delete=models.PROTECT)
+    name = models.CharField(max_length=100)
+    active = models.BooleanField(default=True)
+    class Meta:
+        constraints = [models.UniqueConstraint(fields=['school','name'],name='unique_payment_type_per_school')]
+    def __str__(self): return self.name
+
+class ActivityEvent(models.Model):
+    school = models.ForeignKey(School, on_delete=models.PROTECT)
+    actor = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT)
+    action = models.CharField(max_length=80)
+    created_at = models.DateTimeField(auto_now_add=True)
+    class Meta:
+        ordering = ['-created_at','-pk']
