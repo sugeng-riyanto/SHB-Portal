@@ -96,5 +96,15 @@ Baca [konstitusi proyek](docs/PROJECT_CONSTITUTION.md), [matriks RBAC](docs/RBAC
 ### Akun demo lokal
 Setelah migrasi, jalankan `python manage.py seed_demo` untuk membuat akun uji pada SQLite development. Email login: `superadmin@shb.sch.id`, `admin@shb.sch.id`, `kepala@shb.sch.id`, `yayasan@shb.sch.id`, `walikelas@shb.sch.id`, dan `ortu@shb.sch.id`; password dummy: `DemoSHB!2026`. Perintah juga mengisi data contoh: satu sekolah (`Sekolah Harapan Bangsa (contoh)`), tahun ajaran 2026/2027, kelas 7A dan 10N, tiga murid beserta wali, tiga tagihan dan satu rekening, agar dashboard preview tidak kosong. Semua data bersifat sintetis. Perintah tidak mengubah akun atau data yang sudah ada, dan ditolak di lingkungan produksi maupun PostgreSQL. Jangan gunakan akun/password ini pada server publik.
 
+### Preview lokal: form POST 403 "CSRF token missing" padahal token ada
+Jika login menampilkan `403 CSRF token missing` sementara halaman login jelas memuat `csrfmiddlewaretoken`, cookie `csrftoken` terkirim, dan origin sudah terdaftar di `DJANGO_CSRF_TRUSTED_ORIGINS`, penyebabnya biasanya badan request, bukan CSRF: proxy preview mengirim ulang POST dengan `Transfer-Encoding: chunked`, dan server pengembangan WSGI bawaan `runserver` tidak mendekode badan chunked sehingga `request.POST` kosong. Jalankan preview dengan server ASGI:
+
+```bash
+python -m pip install daphne   # dev saja, bukan kebutuhan produksi
+python manage.py runserver
+```
+
+Bila `daphne` tersedia, `config/settings.py` mengaktifkannya otomatis dan `runserver` menjadi ASGI; tanpa `daphne` server WSGI tetap berjalan. Jangan mengubah atau menonaktifkan CSRF. Tandanya terlihat di log: baris `code 400, message Bad request syntax ('88')` tepat setelah 403 — angka itu ukuran chunk dalam heksadesimal, bukan permintaan sungguhan.
+
 ### Preview HTTPS: jika login menampilkan CSRF 403
 Set `DJANGO_CSRF_TRUSTED_ORIGINS` pada environment server ke origin HTTPS yang tepat, misalnya `https://preview.example.test` (tanpa `/accounts/login/` dan tanpa garis miring terakhir), dan pastikan host juga ada di `DJANGO_ALLOWED_HOSTS`. Restart aplikasi setelah mengganti environment, kemudian muat ulang halaman login. Jangan gunakan wildcard domain atau mematikan CSRF. Jika berada di belakang reverse proxy, pengaturan proxy tepercaya harus sesuai setup deployment; jangan aktifkan header forwarding dari jaringan yang tidak dipercaya.

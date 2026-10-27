@@ -66,6 +66,11 @@ TEMPLATES = [
 
 WSGI_APPLICATION = 'config.wsgi.application'
 
+# Used by the ASGI server (daphne; see the INSTALLED_APPS block below), which is
+# what decodes the chunked request bodies the preview proxy sends. Harmless for
+# a WSGI deployment.
+ASGI_APPLICATION = 'config.asgi.application'
+
 
 # Database
 # https://docs.djangoproject.com/en/5.2/ref/settings/#databases
@@ -130,6 +135,20 @@ CSRF_TRUSTED_ORIGINS = [origin.strip() for origin in os.environ.get('DJANGO_CSRF
 if os.environ.get('SHB_ENV', 'development') != 'production':
     CSRF_TRUSTED_ORIGINS.append('https://pv-ac9ad268c614-51b1306d-b202-4d34-b04b-346824493b23.style.dev')
 INSTALLED_APPS += ['portal']
+
+# Dev only: the local preview proxy re-sends form POSTs with
+# Transfer-Encoding: chunked, which the WSGI dev server (wsgiref) cannot decode,
+# so request.POST stays empty and CsrfViewMiddleware reports "CSRF token
+# missing" even though the form carries a token. Having daphne installed turns
+# `manage.py runserver` into an ASGI server that decodes chunked bodies. It is
+# optional: without daphne the project still runs on the plain WSGI server, and
+# nothing here changes CSRF enforcement.
+try:
+    import daphne  # noqa: F401
+except ImportError:
+    pass
+else:
+    INSTALLED_APPS.insert(0, 'daphne')
 LOGIN_URL = '/accounts/login/'
 LOGIN_REDIRECT_URL = '/dashboard/'
 LOGOUT_REDIRECT_URL = '/'

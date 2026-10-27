@@ -1,0 +1,70 @@
+name: Tests
+
+# Both engines are required. The concurrency tests only run on PostgreSQL and the
+# seed_demo tests only run on SQLite, so a green SQLite run says nothing about row
+# locking, and a green PostgreSQL run says nothing about the seed command.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: tests-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  sqlite:
+    name: Django suite (SQLite)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: requirements.txt
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt
+      - name: Django suite on SQLite
+        run: python manage.py test portal
+
+  postgresql:
+    name: Django suite (PostgreSQL)
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: requirements.txt
+      # scripts/pg_test.sh builds .venv from requirements.txt, installs pgserver
+      # (PostgreSQL binaries bundled in a wheel, so no root, sudo or apt packages are
+      # needed), starts a cluster on a Unix socket, runs `manage.py test portal` and
+      # stops only the cluster it started. It exits with the test runner's status, so a
+      # failing test fails this step. Details: docs/POSTGRES_TESTING.md.
+      - name: Django suite on PostgreSQL
+        env:
+          SHB_PGDATA: ${{ runner.temp }}/shb-pgdata
+          SHB_PGPORT: '55432'
+        run: ./scripts/pg_test.sh
+      # The cluster log is the only place startup failures show up, and the workspace
+      # is discarded afterwards.
+      - name: Upload PostgreSQL logs on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: postgresql-logs
+          if-no-files-found: ignore
+          path: |
+            ${{ runner.temp }}/shb-pgdata/server.log
+            ${{ runner.temp }}/shb-pgdata.initdb.log
