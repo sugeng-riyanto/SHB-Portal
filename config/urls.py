@@ -1,12 +1,20 @@
 from django.contrib import admin
 from django.contrib.auth import views as auth_views
 from django.urls import path, include
-from portal import views, students, banks, messaging, account, integrations, payment_types, exports, receipts
+from portal import views, students, banks, messaging, account, integrations, payment_types, exports, receipts, announcements
 urlpatterns = [
     path("i18n/", include("django.conf.urls.i18n")),
     path('admin/', admin.site.urls), path('',views.home,name='home'),
     path('kabar-sekolah/',views.school_news,name='school_news'),
     path('dashboard/',views.dashboard,name='dashboard'),
+    path('announcements/',announcements.list_announcements,name='announcement_list'),
+    path('announcements/new/',announcements.edit,name='announcement_create'),
+    path('announcements/<int:announcement_id>/edit/',announcements.edit,name='announcement_edit'),
+    path('announcements/<int:announcement_id>/submit/',announcements.submit,name='announcement_submit'),
+    path('announcements/<int:announcement_id>/delete/',announcements.remove,name='announcement_delete'),
+    path('announcements/<int:announcement_id>/approve/',announcements.approve,name='announcement_approve'),
+    path('announcements/verify/<uuid:reference>/',announcements.verify,name='announcement_verify'),
+    path('announcements/verify/<uuid:reference>/qr.png',announcements.qr,name='announcement_qr'),
     path('receipts/<int:receipt_id>/download.pdf',receipts.download_pdf,name='receipt_pdf'),
     path('receipts/verify/',receipts.verify,name='receipt_verify'),
     path('dashboard/export.xlsx',exports.invoice_export,name='invoice_export'),
