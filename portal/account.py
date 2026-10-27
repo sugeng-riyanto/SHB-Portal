@@ -9,6 +9,11 @@ from .models import UserProfile
 from .proofs import validate_image
 
 class PortalLoginView(LoginView):
+    def get_success_url(self):
+        # The dashboard is the landing page for all signed-in roles.
+        from django.urls import reverse
+        return reverse('dashboard')
+
     def form_valid(self,form):
         response=super().form_valid(form)
         UserProfile.objects.get_or_create(user=self.request.user)
