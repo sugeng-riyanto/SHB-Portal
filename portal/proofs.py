@@ -25,6 +25,9 @@ def validate_image(upload):
 def accessible_proofs(user):
     if not user.is_authenticated:
         return TransferProof.objects.none()
+    if user.is_active and user.is_superuser:
+        from django.db.models import F
+        return TransferProof.objects.filter(invoice__enrollment__classroom__year__school_id=F('invoice__enrollment__student__school_id'))
     scope = Q(pk__in=[])
     for member in Membership.objects.filter(user=user, active=True):
         school = Q(invoice__enrollment__student__school_id=member.school_id,
