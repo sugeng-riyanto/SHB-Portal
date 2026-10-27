@@ -66,3 +66,6 @@ User menegaskan prioritas upload XLSX → pilih semua/kelas/grup/individu → ki
 
 ## Profil dan password awal
 Login Django membuat profil awal yang mewajibkan perubahan password sebelum masuk dashboard; halaman profil mendukung nama dan foto JPG/PNG tervalidasi, foto hanya dapat dibuka pemilik. Toggle lihat password memakai JS lokal. 36 tes SQLite lulus. Belum terintegrasi Supabase Auth, enkripsi foto di storage privat, audit, rate limit atau pengujian produksi. Akun yang dibuat di luar alur login perlu diuji pada integrasi selanjutnya.
+
+## Landing page dan kabar sekolah
+Landing page menggunakan bahasa yang lebih hangat; halaman /kabar-sekolah/ menampilkan maksimal enam kabar yang telah diterbitkan dan waktu publikasinya sudah tiba. Superuser Django dapat mengelola SchoolUpdate di /admin/; belum ada antarmuka admin sekolah. Link Instagram/Facebook/YouTube diatur melalui environment HTTPS dan dibuka pada tab baru. Belum ada akun resmi yang dikonfigurasi. Dua tes lokal lulus; belum ada uji visual browser.
