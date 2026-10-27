@@ -60,3 +60,6 @@ Tambahkan profil SHB_ENV=production: wajib secret dan hosts eksplisit, DEBUG off
 
 ## Korespondensi awal
 Admin dapat mengirim pesan individual kepada wali dengan membership aktif pada sekolahnya; pesan tersimpan dalam inbox wali dan SMTP opsional mencatat status accepted/failed. Email default dinonaktifkan, konfigurasi SMTP via environment; tidak ada retry otomatis untuk kegagalan ambigu. 29 tes Django SQLite lulus termasuk outbox simulasi dan isolasi sekolah. Belum ada preview/konfirmasi kedua, bulk, pembatasan kecepatan, validasi email terverifikasi, antrian, audit, Supabase Auth/RLS, pelindungan operasional dan uji SMTP nyata. Belum siap data asli.
+
+## Penegasan alur bulk
+User menegaskan prioritas upload XLSX → pilih semua/kelas/grup/individu → kirim massal. `portal/recipients.py` menyiapkan seleksi wali per kelas berbasis sekolah/kelas dengan deduplikasi akun; uji lintas sekolah lulus. Fungsi belum terhubung UI atau pengiriman, tidak memproses per-tagihan dan tidak mengirim email. Fitur bulk, grup, commit XLSX dan queue belum selesai.
