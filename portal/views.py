@@ -33,7 +33,7 @@ def dashboard(request):
     memberships = list(Membership.objects.filter(user=request.user, active=True).select_related('school'))
     is_super_admin = bool(request.user.is_active and request.user.is_superuser)
     is_school_admin = any(m.role == Membership.Role.ADMIN for m in memberships) and not is_super_admin
-    invoices = list(scoped_invoices(request.user).select_related('enrollment__student','enrollment__classroom')[:100])
+    invoices = list(scoped_invoices(request.user).select_related('enrollment__student','enrollment__classroom','receipt')[:100])
     guardian_schools = set(Membership.objects.filter(user=request.user, role=Membership.Role.GUARDIAN, active=True).values_list('school_id', flat=True))
     linked_students = set(request.user.linked_students.values_list('id', flat=True))
     for invoice in invoices:
@@ -157,6 +157,8 @@ def proof_verify(request, proof_id):
         if proof.reported_amount > invoice.amount + invoice.fine - already_paid:
             return HttpResponseBadRequest('Nominal melebihi sisa tagihan.')
         Payment.objects.create(invoice=invoice,amount=proof.reported_amount,verified=True)
+        from .receipts import issue_if_paid
+        issue_if_paid(invoice)
         proof.status = TransferProof.Status.VERIFIED
         proof.reviewed_by = request.user
         proof.reviewed_at = timezone.now()
@@ -236,6 +238,8 @@ def proof_bulk_verify(request):
                 paid = invoice.payments.filter(verified=True).aggregate(total=Sum('amount'))['total'] or 0
                 if proof.reported_amount > invoice.amount + invoice.fine - paid: raise ValueError('Nominal melebihi sisa tagihan.')
                 Payment.objects.create(invoice=invoice,amount=proof.reported_amount,verified=True)
+                from .receipts import issue_if_paid
+                issue_if_paid(invoice)
                 proof.status=TransferProof.Status.VERIFIED;proof.reviewed_by=request.user;proof.reviewed_at=timezone.now()
                 proof.save(update_fields=['status','reviewed_by','reviewed_at'])
     except ValueError as exc:
