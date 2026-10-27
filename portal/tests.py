@@ -477,3 +477,44 @@ class DashboardAccessTests(TestCase):
             self.assertIn('no-store',response['Cache-Control'])
             self.client.force_login(self.guardian)
             self.assertEqual(self.client.get('/superadmin/integrations/smtp/reveal/').status_code,404)
+
+    def test_proof_upload_form_contains_csrf_and_accepts_valid_token(self):
+        from io import BytesIO
+        from PIL import Image
+        from django.test import Client
+        from django.core.files.uploadedfile import SimpleUploadedFile
+        client=Client(enforce_csrf_checks=True);client.force_login(self.guardian)
+        response=client.get('/invoices/1/proof/')
+        self.assertContains(response,'csrfmiddlewaretoken')
+        token=client.cookies['csrftoken'].value
+        image=BytesIO();Image.new('RGB',(3,3),'white').save(image,format='PNG')
+        response=client.post('/invoices/1/proof/',{'csrfmiddlewaretoken':token,'amount':'10000','transfer_date':'2026-10-27','image':SimpleUploadedFile('proof.png',image.getvalue())})
+        self.assertEqual(response.status_code,302)
+    def test_bulk_approval_is_atomic_and_denies_other_school(self):
+        from .models import TransferProof, Payment
+        invoice=Invoice.objects.get()
+        p1=TransferProof.objects.create(invoice=invoice,guardian=self.guardian,reported_amount=100000,transfer_date=date(2026,10,27),image=b'x',image_type='png')
+        p2=TransferProof.objects.create(invoice=invoice,guardian=self.guardian,reported_amount=500000,transfer_date=date(2026,10,27),image=b'x',image_type='png')
+        admin=get_user_model().objects.create_user(username='bulk-proof',password='long-test-password')
+        Membership.objects.create(user=admin,school=self.school,role='admin')
+        self.client.force_login(self.other)
+        self.assertEqual(self.client.post('/proofs/bulk-verify/',{'proof_ids':[p1.pk]}).status_code,400)
+        self.client.force_login(admin)
+        self.assertEqual(self.client.post('/proofs/bulk-verify/',{'proof_ids':[p1.pk,p2.pk]}).status_code,400)
+        self.assertEqual(Payment.objects.count(),0)
+        p2.reported_amount=300000;p2.save(update_fields=['reported_amount'])
+        self.assertEqual(self.client.post('/proofs/bulk-verify/',{'proof_ids':[p1.pk,p2.pk]}).status_code,302)
+        self.assertEqual(Payment.objects.count(),2)
+        self.assertEqual(self.client.post('/proofs/bulk-verify/',{'proof_ids':[p1.pk]}).status_code,400)
+    def test_proof_comments_private_between_owner_and_admin(self):
+        from .models import TransferProof, ProofComment
+        proof=TransferProof.objects.create(invoice=Invoice.objects.get(),guardian=self.guardian,reported_amount=100,transfer_date=date(2026,10,27),image=b'x',image_type='png')
+        self.client.force_login(self.guardian)
+        self.assertEqual(self.client.post(f'/proofs/{proof.pk}/comments/',{'body':'Mohon diperiksa'}).status_code,302)
+        self.client.force_login(self.teacher)
+        self.assertEqual(self.client.get(f'/proofs/{proof.pk}/comments/').status_code,404)
+        admin=get_user_model().objects.create_user(username='comment-admin',password='long-test-password')
+        Membership.objects.create(user=admin,school=self.school,role='admin')
+        self.client.force_login(admin)
+        self.assertContains(self.client.get(f'/proofs/{proof.pk}/comments/'),'Mohon diperiksa')
+        self.assertEqual(ProofComment.objects.count(),1)
