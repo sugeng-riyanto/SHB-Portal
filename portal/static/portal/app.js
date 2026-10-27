@@ -32,3 +32,13 @@ if (languageSelect) {
   const current = document.documentElement.lang.toLowerCase();
   languageSelect.value = current.startsWith('zh-hant') ? 'zh-hant' : current.startsWith('id') ? 'id' : 'en';
 }
+const allProofs = document.getElementById('select-all-proofs');
+const proofBoxes = Array.from(document.querySelectorAll('[data-proof-amount]'));
+const proofTotal = document.getElementById('proof-total');
+function updateProofTotal() {
+  if (!proofTotal) return;
+  const total = proofBoxes.filter(box => box.checked).reduce((sum, box) => sum + Number(box.dataset.proofAmount), 0);
+  proofTotal.textContent = 'Total dipilih: Rp ' + new Intl.NumberFormat('id-ID').format(total);
+}
+if (allProofs) allProofs.addEventListener('change', () => { proofBoxes.forEach(box => { box.checked = allProofs.checked; }); updateProofTotal(); });
+proofBoxes.forEach(box => box.addEventListener('change', updateProofTotal));
