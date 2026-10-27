@@ -51,3 +51,6 @@ Admin sekolah dan superuser dapat melihat, mencari, menambah, mengubah, menonakt
 
 ## Rekening sekolah awal
 Kepala sekolah dan superuser dapat menambah, melihat, mengubah, menonaktifkan dan ekspor rekening sesuai scope. 26 tes Django SQLite lulus. Rekening belum terhubung ke tagihan, belum ada snapshot tujuan, audit, impor dan pengujian PostgreSQL/RLS. Jangan gunakan data nyata.
+
+## Email bilingual
+Templat pembayaran profesional ID/EN berbentuk HTML inline dan teks biasa disiapkan. Variabel, domain resmi, bahasa per wali, pengiriman multipart, SMTP dan validasi penerima belum terhubung. Tidak ada email yang dikirim.
