@@ -1,0 +1,1 @@
+{% extends 'portal/base.html' %}{% block content %}<section class="card auth-card"><h1>{% if student %}Ubah murid{% else %}Tambah murid{% endif %}</h1><form method="post" class="auth-form">{% csrf_token %}{{ form.as_p }}<button class="button">Simpan</button></form><p><a href="{% url 'student_list' %}">Kembali ke data murid</a></p></section>{% endblock %}
