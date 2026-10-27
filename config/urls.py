@@ -1,10 +1,15 @@
 from django.contrib import admin
 from django.contrib.auth import views as auth_views
 from django.urls import path
-from portal import views
+from portal import views, students
 urlpatterns = [
     path('admin/', admin.site.urls), path('',views.home,name='home'),
     path('dashboard/',views.dashboard,name='dashboard'),
+    path('students/',students.student_list,name='student_list'),
+    path('students/new/',students.student_edit,name='student_create'),
+    path('students/export.xlsx',students.student_export,name='student_export'),
+    path('students/<int:student_id>/edit/',students.student_edit,name='student_edit'),
+    path('students/<int:student_id>/deactivate/',students.student_deactivate,name='student_deactivate'),
     path('imports/', views.import_preview, name='import_preview'),
     path('proofs/', views.proofs_list, name='proofs_list'),
     path('superadmin/integrations/', views.integration_settings, name='integration_settings'),
