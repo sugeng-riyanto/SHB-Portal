@@ -39,6 +39,7 @@ class Student(models.Model):
     school = models.ForeignKey(School, on_delete=models.PROTECT)
     nis = models.CharField(max_length=32)
     name = models.CharField(max_length=200)
+    active = models.BooleanField(default=True)
     guardians = models.ManyToManyField(settings.AUTH_USER_MODEL, related_name='linked_students', blank=True)
     class Meta:
         constraints = [models.UniqueConstraint(fields=['school','nis'],name='unique_nis_per_school')]
