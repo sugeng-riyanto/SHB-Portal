@@ -1,11 +1,16 @@
 from django.contrib import admin
 from django.contrib.auth import views as auth_views
 from django.urls import path
-from portal import views, students
+from portal import views, students, banks
 urlpatterns = [
     path('admin/', admin.site.urls), path('',views.home,name='home'),
     path('dashboard/',views.dashboard,name='dashboard'),
     path('students/',students.student_list,name='student_list'),
+    path('banks/',banks.bank_list,name='bank_list'),
+    path('banks/new/',banks.bank_edit,name='bank_create'),
+    path('banks/export.xlsx',banks.bank_export,name='bank_export'),
+    path('banks/<int:bank_id>/edit/',banks.bank_edit,name='bank_edit'),
+    path('banks/<int:bank_id>/deactivate/',banks.bank_deactivate,name='bank_deactivate'),
     path('students/new/',students.student_edit,name='student_create'),
     path('students/export.xlsx',students.student_export,name='student_export'),
     path('students/<int:student_id>/edit/',students.student_edit,name='student_edit'),
