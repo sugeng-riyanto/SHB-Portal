@@ -114,3 +114,36 @@ class DashboardAccessTests(TestCase):
         book.active.append(['001','8A','Nama','a@example.test','SPP','=1+1',0,'','2026/27','Oktober','2026-11-01','ref','',''])
         stream=BytesIO();book.save(stream)
         self.assertTrue(any('Formula' in e for e in preview_xlsx(stream.getvalue())[0]['errors']))
+
+    def test_guardian_upload_and_cross_family_privacy(self):
+        from io import BytesIO
+        from PIL import Image
+        from django.core.files.uploadedfile import SimpleUploadedFile
+        from .models import TransferProof, Payment
+        image=BytesIO();Image.new('RGB',(4,4),'white').save(image,format='PNG')
+        self.client.force_login(self.guardian)
+        response=self.client.post('/invoices/1/proof/',{'amount':'200000','transfer_date':'2026-10-27','image':SimpleUploadedFile('proof.png',image.getvalue())})
+        self.assertEqual(response.status_code,302)
+        proof=TransferProof.objects.get()
+        self.assertEqual(Payment.objects.count(),0)
+        self.assertEqual(self.client.get(f'/proofs/{proof.id}/image/').status_code,200)
+        self.client.force_login(self.other)
+        self.assertEqual(self.client.get(f'/proofs/{proof.id}/image/').status_code,404)
+    def test_admin_verify_once_and_cross_role_denied(self):
+        from .models import TransferProof, Payment
+        proof=TransferProof.objects.create(invoice=Invoice.objects.get(),guardian=self.guardian,reported_amount=100000,transfer_date=date(2026,10,27),image=b'x',image_type='png')
+        self.client.force_login(self.teacher)
+        self.assertEqual(self.client.post(f'/proofs/{proof.id}/verify/').status_code,404)
+        admin=get_user_model().objects.create_user(username='proof-admin',password='long-test-password')
+        Membership.objects.create(user=admin,school=self.school,role='admin')
+        self.client.force_login(admin)
+        self.assertEqual(self.client.post(f'/proofs/{proof.id}/verify/').status_code,302)
+        self.assertEqual(self.client.post(f'/proofs/{proof.id}/verify/').status_code,400)
+        self.assertEqual(Payment.objects.count(),1)
+    def test_invalid_photo_rejected(self):
+        from django.core.files.uploadedfile import SimpleUploadedFile
+        from .models import TransferProof
+        self.client.force_login(self.guardian)
+        response=self.client.post('/invoices/1/proof/',{'amount':'100','transfer_date':'2026-10-27','image':SimpleUploadedFile('fake.png',b'not an image')})
+        self.assertContains(response,'Foto tidak valid')
+        self.assertEqual(TransferProof.objects.count(),0)
