@@ -84,3 +84,6 @@ Super admin dapat menyimpan, membaca status, mengubah, dan menghapus konfigurasi
 
 ## Tema super admin dan membuka secret
 Halaman Django admin diberi tema SHB menggunakan CSS lokal, bukan Tailwind (instalasi Tailwind tidak tersedia pada lingkungan ini). Menu menuju users, sekolah, peran, integrasi dan portal tetap menggunakan otorisasi Django yang ada. Superuser dapat melihat secret integrasi setelah memasukkan password lagi; response no-store, percobaan dibatasi 5/15 menit oleh Django cache, dan aksi dicatat tanpa nilai secret. Cache default lokal per proses tidak memadai untuk produksi multiworker; MFA, audit tersentral, cache bersama, kebijakan retensi dan uji keamanan masih diperlukan. Pengaturan yang disimpan tetap belum terhubung ke layanan. Tes terarah SQLite 2 lulus; UI browser belum diuji. Jangan masukkan kredensial nyata sebelum staging aman.
+
+## Pemeriksaan bukti dan komentar
+Tambah filter kelas, pilihan beberapa bukti, total nominal pada browser, verifikasi massal atomik (maks. 100 per permintaan) dan komentar pribadi pemilik bukti/admin. Pengunggahan diuji dengan CSRF aktif di Django test client. Tiga tes terarah lulus di SQLite; preview Freebuff tidak diakses, penyebab CSRF hilang pada preview belum diketahui. Perlu uji Postgres concurrency, audit, UI browser, admin koreksi nominal dan grup khusus; belum siap data asli.
