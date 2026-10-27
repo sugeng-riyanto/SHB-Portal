@@ -126,3 +126,43 @@ class SchoolUpdate(models.Model):
     class Meta:
         ordering = ['-published_at', '-pk']
     def __str__(self): return self.title
+
+class IntegrationConfig(models.Model):
+    class Provider(models.TextChoices):
+        SUPABASE = 'supabase', 'Supabase'
+        SMTP = 'smtp', 'Gmail SMTP'
+        MIDTRANS = 'midtrans', 'Midtrans'
+    provider = models.CharField(max_length=20, choices=Provider.choices, unique=True)
+    public_config = models.JSONField(default=dict)
+    encrypted_secrets = models.BinaryField(null=True, blank=True)
+    active = models.BooleanField(default=False)
+    updated_at = models.DateTimeField(auto_now=True)
+
+class ProofComment(models.Model):
+    proof = models.ForeignKey(TransferProof, on_delete=models.PROTECT, related_name='comments')
+    sender = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT)
+    body = models.TextField(max_length=1000)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+class PaymentType(models.Model):
+    school = models.ForeignKey(School, on_delete=models.PROTECT)
+    name = models.CharField(max_length=100)
+    active = models.BooleanField(default=True)
+    class Meta:
+        constraints = [models.UniqueConstraint(fields=['school','name'],name='unique_payment_type_per_school')]
+    def __str__(self): return self.name
+
+class ActivityEvent(models.Model):
+    school = models.ForeignKey(School, on_delete=models.PROTECT)
+    actor = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT)
+    action = models.CharField(max_length=80)
+    created_at = models.DateTimeField(auto_now_add=True)
+    class Meta:
+        ordering = ['-created_at','-pk']
+
+class PaymentReceipt(models.Model):
+    invoice = models.OneToOneField(Invoice,on_delete=models.PROTECT,related_name='receipt')
+    number = models.CharField(max_length=40, unique=True)
+    verification_code = models.CharField(max_length=6)
+    amount = models.PositiveBigIntegerField()
+    issued_at = models.DateTimeField(auto_now_add=True)

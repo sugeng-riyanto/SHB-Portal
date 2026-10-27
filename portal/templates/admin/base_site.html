@@ -1,0 +1,5 @@
+{% extends "admin/base_site.html" %}{% load static %}
+{% block title %}{{ title }} | SHB Portal{% endblock %}
+{% block extrastyle %}{{ block.super }}<link rel="stylesheet" href="{% static 'portal/admin-shb.css' %}">{% endblock %}
+{% block branding %}<div class="shb-brand"><a href="{% url 'admin:index' %}" class="shb-brand-link"><span class="shb-logo">HB</span><span><strong>SHB Portal</strong><small>SUPER ADMIN</small></span></a></div>{% endblock %}
+{% block nav-global %}<nav class="shb-quick-nav" aria-label="Super admin navigation"><a href="{% url 'admin:index' %}">Dashboard</a><a href="{% url 'admin:auth_user_changelist' %}">Users</a><a href="{% url 'admin:portal_school_changelist' %}">Schools</a><a href="{% url 'admin:portal_membership_changelist' %}">Roles</a><a href="{% url 'integration_settings' %}">Integrations</a><a href="{% url 'dashboard' %}">Portal</a></nav>{% endblock %}

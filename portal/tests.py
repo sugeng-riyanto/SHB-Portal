@@ -426,6 +426,215 @@ class DashboardAccessTests(TestCase):
         self.assertTrue(any('jatuh_tempo' in e for e in rows[0]['errors']))
         self.assertTrue(any('duplikat' in e for e in rows[1]['errors']))
 
+    def test_superadmin_integrations_encrypt_and_do_not_expose_secret(self):
+        from cryptography.fernet import Fernet
+        from unittest.mock import patch
+        from .models import IntegrationConfig
+        root=get_user_model().objects.create_superuser(username='integration-root',email='root@example.test',password='long-test-password')
+        self.client.force_login(root)
+        key=Fernet.generate_key().decode()
+        with patch.dict('os.environ', {'SHB_INTEGRATION_ENCRYPTION_KEY':key}):
+            response=self.client.post('/superadmin/integrations/smtp/',{'host':'smtp.gmail.com','port':'587','username':'school@example.test','from_email':'school@example.test','app_password':'test-secret-123','active':'on'})
+            self.assertEqual(response.status_code,302)
+            config=IntegrationConfig.objects.get(provider='smtp')
+            self.assertNotIn(b'test-secret-123',bytes(config.encrypted_secrets))
+            response=self.client.get('/superadmin/integrations/smtp/')
+            self.assertNotContains(response,'test-secret-123')
+            self.assertEqual(response['Cache-Control'],'private, no-store')
+            self.client.post('/superadmin/integrations/smtp/',{'host':'smtp.gmail.com','port':'587','username':'school@example.test','from_email':'school@example.test','app_password':'','active':'on'})
+            config.refresh_from_db()
+            self.assertIn(b'test-secret-123',Fernet(key.encode()).decrypt(bytes(config.encrypted_secrets)))
+            self.assertEqual(self.client.post('/superadmin/integrations/smtp/remove/').status_code,302)
+            self.assertFalse(IntegrationConfig.objects.exists())
+        self.client.force_login(self.guardian)
+        self.assertEqual(self.client.get('/superadmin/integrations/smtp/').status_code,404)
+    def test_integration_missing_encryption_key_does_not_save(self):
+        from unittest.mock import patch
+        from .models import IntegrationConfig
+        root=get_user_model().objects.create_superuser(username='nokey',email='root@example.test',password='long-test-password')
+        self.client.force_login(root)
+        with patch.dict('os.environ', {'SHB_INTEGRATION_ENCRYPTION_KEY':''}):
+            response=self.client.post('/superadmin/integrations/smtp/',{'host':'smtp.gmail.com','port':'587','username':'school@example.test','from_email':'school@example.test','app_password':'secret'})
+        self.assertContains(response,'belum disimpan')
+        self.assertFalse(IntegrationConfig.objects.exists())
+
+    def test_superadmin_branding_and_local_assets(self):
+        root=get_user_model().objects.create_superuser(username='styled-admin',email='root@example.test',password='long-test-password')
+        self.client.force_login(root)
+        response=self.client.get('/admin/')
+        self.assertContains(response,'SHB Portal')
+        self.assertContains(response,'/static/portal/admin-shb.css')
+        self.assertContains(response,'/superadmin/integrations/')
+        self.assertNotContains(response,'cdn.')
+
+    def test_superadmin_secret_reveal_requires_password_and_scope(self):
+        from cryptography.fernet import Fernet
+        from unittest.mock import patch
+        from .models import IntegrationConfig
+        import json
+        key=Fernet.generate_key();root=get_user_model().objects.create_superuser(username='reveal-root',email='root@example.test',password='strong-password-987!')
+        IntegrationConfig.objects.create(provider='smtp',encrypted_secrets=Fernet(key).encrypt(json.dumps({'app_password':'private-secret-value'}).encode()))
+        with patch.dict('os.environ',{'SHB_INTEGRATION_ENCRYPTION_KEY':key.decode()}):
+            self.client.force_login(root)
+            self.assertNotContains(self.client.get('/superadmin/integrations/smtp/reveal/'),'private-secret-value')
+            self.assertNotContains(self.client.post('/superadmin/integrations/smtp/reveal/',{'password':'wrong'}),'private-secret-value')
+            response=self.client.post('/superadmin/integrations/smtp/reveal/',{'password':'strong-password-987!'})
+            self.assertContains(response,'private-secret-value')
+            self.assertIn('no-store',response['Cache-Control'])
+            self.client.force_login(self.guardian)
+            self.assertEqual(self.client.get('/superadmin/integrations/smtp/reveal/').status_code,404)
+
+    def test_proof_upload_form_contains_csrf_and_accepts_valid_token(self):
+        from io import BytesIO
+        from PIL import Image
+        from django.test import Client
+        from django.core.files.uploadedfile import SimpleUploadedFile
+        client=Client(enforce_csrf_checks=True);client.force_login(self.guardian)
+        response=client.get(f'/invoices/{self.invoice.pk}/proof/')
+        self.assertContains(response,'csrfmiddlewaretoken')
+        token=client.cookies['csrftoken'].value
+        image=BytesIO();Image.new('RGB',(3,3),'white').save(image,format='PNG')
+        response=client.post(f'/invoices/{self.invoice.pk}/proof/',{'csrfmiddlewaretoken':token,'amount':'10000','transfer_date':'2026-10-27','image':SimpleUploadedFile('proof.png',image.getvalue())})
+        self.assertEqual(response.status_code,302)
+    def test_bulk_approval_is_atomic_and_denies_other_school(self):
+        from .models import TransferProof, Payment
+        invoice=Invoice.objects.get()
+        p1=TransferProof.objects.create(invoice=invoice,guardian=self.guardian,reported_amount=100000,transfer_date=date(2026,10,27),image=b'x',image_type='png')
+        p2=TransferProof.objects.create(invoice=invoice,guardian=self.guardian,reported_amount=500000,transfer_date=date(2026,10,27),image=b'x',image_type='png')
+        admin=get_user_model().objects.create_user(username='bulk-proof',password='long-test-password')
+        Membership.objects.create(user=admin,school=self.school,role='admin')
+        self.client.force_login(self.other)
+        self.assertEqual(self.client.post('/proofs/bulk-verify/',{'proof_ids':[p1.pk]}).status_code,400)
+        self.client.force_login(admin)
+        self.assertEqual(self.client.post('/proofs/bulk-verify/',{'proof_ids':[p1.pk,p2.pk]}).status_code,400)
+        self.assertEqual(Payment.objects.count(),0)
+        p2.reported_amount=300000;p2.save(update_fields=['reported_amount'])
+        self.assertEqual(self.client.post('/proofs/bulk-verify/',{'proof_ids':[p1.pk,p2.pk]}).status_code,302)
+        self.assertEqual(Payment.objects.count(),2)
+        self.assertEqual(self.client.post('/proofs/bulk-verify/',{'proof_ids':[p1.pk]}).status_code,400)
+    def test_proof_comments_private_between_owner_and_admin(self):
+        from .models import TransferProof, ProofComment
+        proof=TransferProof.objects.create(invoice=Invoice.objects.get(),guardian=self.guardian,reported_amount=100,transfer_date=date(2026,10,27),image=b'x',image_type='png')
+        self.client.force_login(self.guardian)
+        self.assertEqual(self.client.post(f'/proofs/{proof.pk}/comments/',{'body':'Mohon diperiksa'}).status_code,302)
+        self.client.force_login(self.teacher)
+        self.assertEqual(self.client.get(f'/proofs/{proof.pk}/comments/').status_code,404)
+        admin=get_user_model().objects.create_user(username='comment-admin',password='long-test-password')
+        Membership.objects.create(user=admin,school=self.school,role='admin')
+        self.client.force_login(admin)
+        self.assertContains(self.client.get(f'/proofs/{proof.pk}/comments/'),'Mohon diperiksa')
+        self.assertEqual(ProofComment.objects.count(),1)
+
+    def test_responsive_navigation_has_accessible_toggle(self):
+        response=self.client.get('/')
+        self.assertContains(response,'data-menu-toggle')
+        self.assertContains(response,'aria-controls="main-navigation"')
+        self.assertContains(response,'id="main-navigation"')
+        self.assertContains(response,'/static/portal/app.js')
+
+    def test_demo_data_works_for_guardian_and_hides_upload_for_teacher(self):
+        from django.db import connection
+        # seed_demo refuses to run outside a development SQLite database by design.
+        if connection.vendor != 'sqlite':
+            self.skipTest('seed_demo diizinkan hanya pada SQLite development.')
+        from io import StringIO
+        from django.core.management import call_command
+        from .models import Invoice
+        call_command('seed_demo',stdout=StringIO())
+        call_command('seed_demo_data',stdout=StringIO())
+        call_command('seed_demo_data',stdout=StringIO())
+        invoice=Invoice.objects.get(reference='SHB-DEMO-INV-001')
+        guardian=get_user_model().objects.get(username='ortu@shb.sch.id')
+        teacher=get_user_model().objects.get(username='walikelas@shb.sch.id')
+        self.client.force_login(guardian)
+        self.assertContains(self.client.get('/dashboard/'),f'/invoices/{invoice.pk}/proof/')
+        self.assertEqual(self.client.get(f'/invoices/{invoice.pk}/proof/').status_code,200)
+        self.client.force_login(teacher)
+        self.assertNotContains(self.client.get('/dashboard/'),f'/invoices/{invoice.pk}/proof/')
+        self.assertEqual(self.client.get(f'/invoices/{invoice.pk}/proof/').status_code,404)
+
+    def test_payment_types_defaults_crud_and_scope(self):
+        from .models import PaymentType,ActivityEvent
+        admin=get_user_model().objects.create_user(username='types-admin',password='long-test-password')
+        Membership.objects.create(user=admin,school=self.school,role='admin')
+        self.client.force_login(admin)
+        self.assertEqual(self.client.post('/payment-types/defaults/',{'school':self.school.pk}).status_code,302)
+        self.client.post('/payment-types/defaults/',{'school':self.school.pk})
+        self.assertEqual(PaymentType.objects.filter(school=self.school).count(),5)
+        self.assertEqual(set(PaymentType.objects.filter(school=self.school).values_list('name',flat=True)),{'Monthly','ECA','Annual Fee','Stationery','Late Fee'})
+        self.assertEqual(self.client.post('/payment-types/new/',{'school':self.school.pk,'name':'Books','active':'on'}).status_code,302)
+        item=PaymentType.objects.get(school=self.school,name='Books')
+        self.assertEqual(self.client.post(f'/payment-types/{item.pk}/deactivate/').status_code,302)
+        item.refresh_from_db();self.assertFalse(item.active)
+        self.assertTrue(ActivityEvent.objects.filter(school=self.school,actor=admin).exists())
+        self.client.force_login(self.other)
+        self.assertEqual(self.client.get(f'/payment-types/{item.pk}/edit/').status_code,404)
+        self.assertNotContains(self.client.get('/activities/'),'types-admin')
+        self.client.force_login(self.guardian)
+        self.assertEqual(self.client.get('/payment-types/').status_code,404)
+        self.assertEqual(self.client.get('/activities/').status_code,404)
+
+    def test_dashboard_billing_timeline_respects_scope(self):
+        self.client.force_login(self.guardian)
+        self.assertContains(self.client.get('/dashboard/'),'Billing timeline')
+        self.assertContains(self.client.get('/dashboard/'),'Nov 2026')
+        self.client.force_login(self.other)
+        self.assertNotContains(self.client.get('/dashboard/'),'Nov 2026')
+
+    def test_invoice_export_never_exposes_other_school(self):
+        from io import BytesIO
+        from openpyxl import load_workbook
+        self.client.force_login(self.guardian)
+        response=self.client.get('/dashboard/export.xlsx')
+        self.assertEqual(response.status_code,200)
+        self.assertIn('no-store',response['Cache-Control'])
+        rows=list(load_workbook(BytesIO(response.content)).active.values)
+        self.assertTrue(any('ANAK SATU' in row for row in rows))
+        self.client.force_login(self.other)
+        rows=list(load_workbook(BytesIO(self.client.get('/dashboard/export.xlsx').content)).active.values)
+        self.assertFalse(any('ANAK SATU' in row for row in rows))
+
+    def test_superadmin_and_school_admin_dashboard_are_distinct(self):
+        User=get_user_model()
+        root=User.objects.create_superuser(username='dash-super',email='root@example.test',password='long-test-password')
+        admin=User.objects.create_user(username='dash-admin',password='long-test-password')
+        Membership.objects.create(user=admin,school=self.school,role='admin')
+        self.client.force_login(root)
+        response=self.client.get('/dashboard/')
+        self.assertContains(response,'Super admin dashboard')
+        self.assertContains(response,'All schools')
+        self.assertContains(response,'/superadmin/integrations/')
+        self.client.force_login(admin)
+        response=self.client.get('/dashboard/')
+        self.assertContains(response,'School admin dashboard')
+        self.assertContains(response,'Assigned schools')
+        self.assertNotContains(response,'/superadmin/integrations/')
+        self.assertContains(response,'500000')
+        self.assertEqual(self.client.get('/superadmin/integrations/').status_code,404)
+
+    def test_receipt_only_when_invoice_fully_paid_and_scoped(self):
+        from .models import TransferProof,PaymentReceipt
+        invoice=Invoice.objects.get()
+        proof=TransferProof.objects.create(invoice=invoice,guardian=self.guardian,reported_amount=200000,transfer_date=date(2026,10,27),image=b'x',image_type='png')
+        admin=get_user_model().objects.create_user(username='receipt-admin',password='long-test-password')
+        Membership.objects.create(user=admin,school=self.school,role='admin')
+        self.client.force_login(admin)
+        self.assertEqual(self.client.post(f'/proofs/{proof.pk}/verify/').status_code,302)
+        self.assertFalse(PaymentReceipt.objects.exists())
+        proof2=TransferProof.objects.create(invoice=invoice,guardian=self.guardian,reported_amount=300000,transfer_date=date(2026,10,27),image=b'x',image_type='png')
+        self.assertEqual(self.client.post(f'/proofs/{proof2.pk}/verify/').status_code,302)
+        receipt=PaymentReceipt.objects.get();self.assertEqual(len(receipt.verification_code),6)
+        self.assertTrue(receipt.verification_code.isascii() and receipt.verification_code.isalnum() and receipt.verification_code == receipt.verification_code.upper())
+        response=self.client.get('/receipts/verify/',{'number':receipt.number,'code':receipt.verification_code})
+        self.assertContains(response,'ANAK SATU')
+        self.client.force_login(self.guardian)
+        response=self.client.get(f'/receipts/{receipt.pk}/download.pdf')
+        self.assertEqual(response.status_code,200);self.assertTrue(response.content.startswith(b'%PDF'))
+        self.assertEqual(response['Cache-Control'],'private, no-store')
+        self.client.force_login(self.other)
+        self.assertEqual(self.client.get(f'/receipts/{receipt.pk}/download.pdf').status_code,404)
+        self.assertNotContains(self.client.get('/receipts/verify/',{'number':receipt.number,'code':receipt.verification_code}),'ANAK SATU')
+
     def test_cross_school_membership_cannot_edit_or_withdraw_proof(self):
         # Guardianship (student.guardians) is school-agnostic, so a linked guardian who is
         # only a member of another school can own a proof on a SHB invoice. School scope

@@ -1,5 +1,6 @@
 from django.contrib.auth.decorators import login_required
 from django.db.models import Count, Sum
+from django.db.models.functions import TruncMonth
 from django.shortcuts import render
 from .access import aggregate_invoices, scoped_invoices
 from .models import Membership
@@ -29,10 +30,24 @@ def school_news(request):
 
 @login_required
 def dashboard(request):
-    memberships = Membership.objects.filter(user=request.user, active=True).select_related('school')
-    invoices = scoped_invoices(request.user).select_related('enrollment__student','enrollment__classroom')[:100]
-    summary = aggregate_invoices(request.user).aggregate(count=Count('id'), total=Sum('amount'))
-    return render(request, 'portal/dashboard.html', {'memberships': memberships, 'invoices': invoices, 'summary': summary})
+    memberships = list(Membership.objects.filter(user=request.user, active=True).select_related('school'))
+    is_super_admin = bool(request.user.is_active and request.user.is_superuser)
+    is_school_admin = any(m.role == Membership.Role.ADMIN for m in memberships) and not is_super_admin
+    invoices = list(scoped_invoices(request.user).select_related('enrollment__student','enrollment__classroom','receipt')[:100])
+    guardian_schools = set(Membership.objects.filter(user=request.user, role=Membership.Role.GUARDIAN, active=True).values_list('school_id', flat=True))
+    linked_students = set(request.user.linked_students.values_list('id', flat=True))
+    for invoice in invoices:
+        invoice.may_upload_proof = invoice.enrollment.student.school_id in guardian_schools and invoice.enrollment.student_id in linked_students and not invoice.cancelled
+    aggregate_query = aggregate_invoices(request.user)
+    if is_school_admin:
+        aggregate_query = scoped_invoices(request.user).filter(cancelled=False)
+    summary = aggregate_query.aggregate(count=Count('id'), total=Sum('amount'))
+    # Leadership aggregate and individual scopes remain separate; no student names in chart.
+    chart_query = aggregate_query if aggregate_query.exists() else scoped_invoices(request.user).filter(cancelled=False)
+    months = list(chart_query.annotate(month=TruncMonth('due_date')).values('month').annotate(count=Count('id')).order_by('month')[:24])
+    maximum = max((m['count'] for m in months), default=1)
+    for month in months: month['width'] = round(100 * month['count'] / maximum)
+    return render(request, 'portal/dashboard.html', {'memberships': memberships, 'invoices': invoices, 'summary': summary, 'months': months, 'is_super_admin': is_super_admin, 'is_school_admin': is_school_admin})
 
 from django.http import HttpResponse, HttpResponseForbidden
 from .imports import ImportErrorDetail, preview_xlsx, template_bytes, MAX_BYTES
@@ -78,7 +93,11 @@ from .proofs import accessible_proofs, validate_image
 
 @login_required
 def proofs_list(request):
-    proofs = list(accessible_proofs(request.user).select_related('invoice__enrollment__student')[:100])
+    proofs_query = accessible_proofs(request.user).select_related('invoice__enrollment__student', 'invoice__enrollment__classroom')
+    class_filter = request.GET.get('class', '').strip()[:20]
+    if class_filter:
+        proofs_query = proofs_query.filter(invoice__enrollment__classroom__name=class_filter)
+    proofs = list(proofs_query[:100])
     admin_schools = set(Membership.objects.filter(user=request.user, active=True, role=Membership.Role.ADMIN).values_list('school_id', flat=True))
     if request.user.is_active and request.user.is_superuser:
         from .models import School
@@ -86,6 +105,7 @@ def proofs_list(request):
     for proof in proofs:
         proof.may_verify = proof.invoice.enrollment.student.school_id in admin_schools
         proof.may_edit = proof.guardian_id == request.user.id and proof.status == TransferProof.Status.PENDING
+        proof.may_comment = proof.guardian_id == request.user.id or proof.may_verify
     return render(request, 'portal/proofs.html', {'proofs': proofs})
 
 @login_required
@@ -137,6 +157,8 @@ def proof_verify(request, proof_id):
         if proof.reported_amount > invoice.amount + invoice.fine - already_paid:
             return HttpResponseBadRequest('Nominal melebihi sisa tagihan.')
         Payment.objects.create(invoice=invoice,amount=proof.reported_amount,verified=True)
+        from .receipts import issue_if_paid
+        issue_if_paid(invoice)
         proof.status = TransferProof.Status.VERIFIED
         proof.reviewed_by = request.user
         proof.reviewed_at = timezone.now()
@@ -193,3 +215,49 @@ def proof_withdraw(request, proof_id):
         proof.status=TransferProof.Status.WITHDRAWN
         proof.save(update_fields=['status'])
     return redirect('proofs_list')
+
+@login_required
+@require_POST
+def proof_bulk_verify(request):
+    raw = request.POST.getlist('proof_ids')
+    if not raw or len(raw) > 100 or any(not value.isdigit() for value in raw):
+        return HttpResponseBadRequest('Pilih 1–100 bukti yang valid.')
+    ids = sorted(set(int(value) for value in raw))
+    if len(ids) != len(raw):
+        return HttpResponseBadRequest('Pilihan bukti duplikat.')
+    try:
+        with transaction.atomic():
+            proofs = list(TransferProof.objects.select_for_update().filter(pk__in=ids).select_related('invoice__enrollment__student', 'invoice__enrollment__classroom__year').order_by('pk'))
+            if len(proofs) != len(ids): raise ValueError('Bukti tidak tersedia.')
+            for proof in proofs:
+                student = proof.invoice.enrollment.student
+                if not (request.user.is_active and request.user.is_superuser or Membership.objects.filter(user=request.user,school=student.school,role=Membership.Role.ADMIN,active=True).exists()): raise ValueError('Bukti di luar hak akses.')
+                if proof.invoice.enrollment.classroom.year.school_id != student.school_id: raise ValueError('Sekolah tidak sesuai.')
+                invoice = Invoice.objects.select_for_update().get(pk=proof.invoice_id)
+                if proof.status != TransferProof.Status.PENDING or invoice.cancelled: raise ValueError('Bukti sudah diproses atau tagihan dibatalkan.')
+                paid = invoice.payments.filter(verified=True).aggregate(total=Sum('amount'))['total'] or 0
+                if proof.reported_amount > invoice.amount + invoice.fine - paid: raise ValueError('Nominal melebihi sisa tagihan.')
+                Payment.objects.create(invoice=invoice,amount=proof.reported_amount,verified=True)
+                from .receipts import issue_if_paid
+                issue_if_paid(invoice)
+                proof.status=TransferProof.Status.VERIFIED;proof.reviewed_by=request.user;proof.reviewed_at=timezone.now()
+                proof.save(update_fields=['status','reviewed_by','reviewed_at'])
+    except ValueError as exc:
+        return HttpResponseBadRequest(str(exc))
+    return redirect('proofs_list')
+
+@login_required
+def proof_comments(request, proof_id):
+    from .models import ProofComment
+    proof=get_object_or_404(accessible_proofs(request.user).select_related('invoice__enrollment__student'),pk=proof_id)
+    school_id=proof.invoice.enrollment.student.school_id
+    is_admin=request.user.is_active and (request.user.is_superuser or Membership.objects.filter(user=request.user,school_id=school_id,role=Membership.Role.ADMIN,active=True).exists())
+    if proof.guardian_id != request.user.id and not is_admin: raise Http404
+    error=None
+    if request.method=='POST':
+        body=request.POST.get('body','').strip()
+        if not body or len(body)>1000: error='Komentar wajib diisi, maksimal 1.000 karakter.'
+        else:
+            ProofComment.objects.create(proof=proof,sender=request.user,body=body)
+            return redirect('proof_comments',proof_id=proof.pk)
+    return render(request,'portal/proof_comments.html',{'proof':proof,'comments':proof.comments.select_related('sender').order_by('created_at'),'error':error})

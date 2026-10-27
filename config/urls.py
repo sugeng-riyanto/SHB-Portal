@@ -1,16 +1,26 @@
 from django.contrib import admin
 from django.contrib.auth import views as auth_views
 from django.urls import path, include
-from portal import views, students, banks, messaging, account
+from portal import views, students, banks, messaging, account, integrations, payment_types, exports, receipts
 urlpatterns = [
     path("i18n/", include("django.conf.urls.i18n")),
     path('admin/', admin.site.urls), path('',views.home,name='home'),
     path('kabar-sekolah/',views.school_news,name='school_news'),
     path('dashboard/',views.dashboard,name='dashboard'),
+    path('receipts/<int:receipt_id>/download.pdf',receipts.download_pdf,name='receipt_pdf'),
+    path('receipts/verify/',receipts.verify,name='receipt_verify'),
+    path('dashboard/export.xlsx',exports.invoice_export,name='invoice_export'),
     path('messages/compose/',messaging.compose,name='message_compose'),
     path('messages/history/',messaging.history,name='message_history'),
     path('messages/inbox/',messaging.inbox,name='message_inbox'),
     path('students/',students.student_list,name='student_list'),
+    path('payment-types/',payment_types.list_types,name='payment_types'),
+    path('payment-types/new/',payment_types.edit_type,name='payment_type_create'),
+    path('payment-types/defaults/',payment_types.add_defaults,name='payment_type_defaults'),
+    path('payment-types/export.xlsx',payment_types.export_types,name='payment_type_export'),
+    path('payment-types/<int:type_id>/edit/',payment_types.edit_type,name='payment_type_edit'),
+    path('payment-types/<int:type_id>/deactivate/',payment_types.deactivate_type,name='payment_type_deactivate'),
+    path('activities/',payment_types.activities,name='activities'),
     path('banks/',banks.bank_list,name='bank_list'),
     path('banks/new/',banks.bank_edit,name='bank_create'),
     path('banks/export.xlsx',banks.bank_export,name='bank_export'),
@@ -22,7 +32,12 @@ urlpatterns = [
     path('students/<int:student_id>/deactivate/',students.student_deactivate,name='student_deactivate'),
     path('imports/', views.import_preview, name='import_preview'),
     path('proofs/', views.proofs_list, name='proofs_list'),
-    path('superadmin/integrations/', views.integration_settings, name='integration_settings'),
+    path('proofs/bulk-verify/', views.proof_bulk_verify, name='proof_bulk_verify'),
+    path('proofs/<int:proof_id>/comments/', views.proof_comments, name='proof_comments'),
+    path('superadmin/integrations/', integrations.index, name='integration_settings'),
+    path('superadmin/integrations/<str:provider>/', integrations.edit, name='integration_edit'),
+    path('superadmin/integrations/<str:provider>/remove/', integrations.remove, name='integration_remove'),
+    path('superadmin/integrations/<str:provider>/reveal/', integrations.reveal, name='integration_reveal'),
     path('invoices/<int:invoice_id>/proof/', views.proof_upload, name='proof_upload'),
     path('proofs/<int:proof_id>/image/', views.proof_image, name='proof_image'),
     path('proofs/<int:proof_id>/edit/', views.proof_edit, name='proof_edit'),

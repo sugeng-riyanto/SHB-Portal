@@ -1,0 +1,1 @@
+{% extends 'portal/base.html' %}{% block content %}<section class="card auth-card"><h1>{% if item %}Edit payment type{% else %}Add payment type{% endif %}</h1><form method="post" class="auth-form">{% csrf_token %}{{ form.as_p }}<button class="button">Save</button></form><p><a href="{% url 'payment_types' %}">Back</a></p></section>{% endblock %}
