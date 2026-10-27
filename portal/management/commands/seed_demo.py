@@ -21,17 +21,16 @@ class Command(BaseCommand):
         with transaction.atomic():
             school, _ = School.objects.get_or_create(name='Sekolah Harapan Bangsa (Demo)')
             for username, role in accounts:
-                # Never overwrite an existing user or password.
+                # Explicitly reset only the reserved local demo accounts.
                 user, created = User.objects.get_or_create(username=username, defaults={'email': username})
-                if not created:
-                    self.stdout.write(f'{username}: already exists; unchanged')
-                    continue
-                user.set_password('DemoSHB!2026')
+                if not created and user.email != username:
+                    raise CommandError(f'{username}: existing account does not match demo email; unchanged')
+                user.set_password('demo123')
                 if role is None:
                     user.is_staff = True
                     user.is_superuser = True
                 user.save()
                 if role:
-                    Membership.objects.create(user=user, school=school, role=role)
-                self.stdout.write(f'{username}: created')
+                    Membership.objects.get_or_create(user=user, school=school, role=role)
+                self.stdout.write(f'{username}: created' if created else f'{username}: password reset')
         self.stdout.write('Demo only: accounts have no real student data and must not be used in production.')
