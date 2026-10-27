@@ -19,6 +19,9 @@ def public_information():
     return {'school_updates':updates[:6], 'social_links':social}
 
 def home(request):
+    if request.user.is_authenticated:
+        from django.shortcuts import redirect
+        return redirect('dashboard')
     return render(request, 'portal/home.html', public_information())
 
 def school_news(request):
