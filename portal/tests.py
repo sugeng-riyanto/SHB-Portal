@@ -84,3 +84,33 @@ class DashboardAccessTests(TestCase):
         self.assertContains(response, '/static/portal/app.css')
         self.assertContains(response, '/static/portal/app.js')
         self.assertNotContains(response, 'cdn.')
+
+    def test_xlsx_import_requires_admin(self):
+        self.client.force_login(self.guardian)
+        self.assertEqual(self.client.get('/imports/').status_code,403)
+        self.assertEqual(self.client.get('/imports/template.xlsx').status_code,403)
+    def test_admin_download_and_preview(self):
+        from io import BytesIO
+        from django.core.files.uploadedfile import SimpleUploadedFile
+        from openpyxl import load_workbook
+        user = get_user_model().objects.create_user(username='admin_import',password='long-test-password')
+        Membership.objects.create(user=user,school=self.school,role='admin')
+        self.client.force_login(user)
+        template = self.client.get('/imports/template.xlsx')
+        self.assertEqual(template.status_code,200)
+        book = load_workbook(BytesIO(template.content))
+        book.active.append(['001','8A','ANAK SATU','a@example.test','SPP',500000,0,'','2026/27','Oktober','2026-11-01','ref-001','','00001234'])
+        stream=BytesIO();book.save(stream)
+        upload=SimpleUploadedFile('data.xlsx',stream.getvalue())
+        result=self.client.post('/imports/',{'file':upload})
+        self.assertContains(result,'Validasi awal lolos')
+        self.assertContains(result,'001')
+        self.assertEqual(Invoice.objects.count(),1)
+    def test_formula_rejected_in_preview(self):
+        from io import BytesIO
+        from openpyxl import load_workbook
+        from .imports import template_bytes,preview_xlsx
+        book=load_workbook(BytesIO(template_bytes()))
+        book.active.append(['001','8A','Nama','a@example.test','SPP','=1+1',0,'','2026/27','Oktober','2026-11-01','ref','',''])
+        stream=BytesIO();book.save(stream)
+        self.assertTrue(any('Formula' in e for e in preview_xlsx(stream.getvalue())[0]['errors']))
