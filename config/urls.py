@@ -25,6 +25,7 @@ urlpatterns = [
     path('superadmin/integrations/', integrations.index, name='integration_settings'),
     path('superadmin/integrations/<str:provider>/', integrations.edit, name='integration_edit'),
     path('superadmin/integrations/<str:provider>/remove/', integrations.remove, name='integration_remove'),
+    path('superadmin/integrations/<str:provider>/reveal/', integrations.reveal, name='integration_reveal'),
     path('invoices/<int:invoice_id>/proof/', views.proof_upload, name='proof_upload'),
     path('proofs/<int:proof_id>/image/', views.proof_image, name='proof_image'),
     path('proofs/<int:proof_id>/edit/', views.proof_edit, name='proof_edit'),
