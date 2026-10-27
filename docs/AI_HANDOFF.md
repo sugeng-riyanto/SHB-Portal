@@ -93,3 +93,6 @@ Navbar portal memakai tombol menu pada viewport kecil, target sentuh lebih besar
 
 ## Preview bukti 404 dan CSRF
 Tautan unggah pada dashboard hanya ditampilkan kepada wali yang benar-benar terhubung, dengan membership aktif; admin dan guru tetap dapat melihat bukti sesuai scope tetapi tidak mendapat tautan unggah. `seed_demo_data` menambahkan murid, kelas dan tagihan contoh hanya untuk SQLite development, tanpa mengubah password. Tests lokal: demo guardian bisa membuka form, guru ditolak, submit CSRF aktif lulus. Preview Freebuff belum diakses; error token missing tetap perlu diagnosis di environment aktual.
+
+## Jenis pembayaran, aktivitas dan visualisasi awal
+Admin sekolah/superadmin dapat mengelola PaymentType dan ekspor; default Monthly, ECA, Annual Fee, Stationery dan Late Fee ditambahkan melalui aksi eksplisit per sekolah. Kategori belum terhubung ke invoice/impor. ActivityEvent baru mencatat aksi jenis pembayaran, bukan seluruh aktivitas user. Dashboard menampilkan grafik jumlah tagihan per bulan dalam scope dan ekspor XLSX tagihan sesuai scope. Ekspor bukan bukti pembayaran digital, tidak ditandatangani, dan belum mencakup agregat yayasan/kepala sekolah; spider/radar, timeseries keuangan, bukti digital diverifikasi dan audit lengkap belum selesai. Tes terarah SQLite lulus; Postgres/RLS/browser belum diuji.
