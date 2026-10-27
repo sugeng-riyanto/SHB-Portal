@@ -624,3 +624,15 @@ class DashboardAccessTests(TestCase):
         self.client.force_login(self.other)
         self.assertEqual(self.client.get(f'/receipts/{receipt.pk}/download.pdf').status_code,404)
         self.assertNotContains(self.client.get('/receipts/verify/',{'number':receipt.number,'code':receipt.verification_code}),'ANAK SATU')
+
+    def test_greeting_uses_jakarta_time_boundaries_and_escapes_name(self):
+        from datetime import datetime, timezone as dt_timezone
+        from .views import dashboard_greeting
+        for hour,expected in ((4,'Selamat malam'),(5,'Selamat pagi'),(10,'Selamat pagi'),(11,'Selamat siang'),(14,'Selamat siang'),(15,'Selamat sore'),(17,'Selamat sore'),(18,'Selamat malam')):
+            utc_hour=(hour-7)%24
+            self.assertEqual(dashboard_greeting(datetime(2026,10,27,utc_hour,tzinfo=dt_timezone.utc)),expected)
+        self.guardian.first_name='<Admin>';self.guardian.save()
+        self.client.force_login(self.guardian)
+        response=self.client.get('/dashboard/')
+        self.assertContains(response,'&lt;Admin&gt;')
+        self.assertNotContains(response,'<Admin>')
