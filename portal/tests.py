@@ -271,3 +271,17 @@ class DashboardAccessTests(TestCase):
         self.assertEqual(Message.objects.get().email_status,'failed')
         self.client.force_login(self.teacher)
         self.assertEqual(self.client.get('/messages/compose/').status_code,404)
+
+    def test_seed_demo_is_idempotent_and_cannot_run_on_production(self):
+        from io import StringIO
+        from django.core.management import call_command
+        from django.core.management.base import CommandError
+        from django.test import override_settings
+        out=StringIO();call_command('seed_demo',stdout=out)
+        user=get_user_model().objects.get(username='ortu@shb.sch.id')
+        self.assertTrue(user.check_password('DemoSHB!2026'))
+        user.set_password('different-password');user.save()
+        call_command('seed_demo',stdout=StringIO())
+        user.refresh_from_db();self.assertTrue(user.check_password('different-password'))
+        with override_settings(PRODUCTION=True):
+            with self.assertRaises(CommandError): call_command('seed_demo',stdout=StringIO())
