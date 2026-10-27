@@ -7,6 +7,7 @@ urlpatterns = [
     path('dashboard/',views.dashboard,name='dashboard'),
     path('imports/', views.import_preview, name='import_preview'),
     path('proofs/', views.proofs_list, name='proofs_list'),
+    path('superadmin/integrations/', views.integration_settings, name='integration_settings'),
     path('invoices/<int:invoice_id>/proof/', views.proof_upload, name='proof_upload'),
     path('proofs/<int:proof_id>/image/', views.proof_image, name='proof_image'),
     path('proofs/<int:proof_id>/verify/', views.proof_verify, name='proof_verify'),
