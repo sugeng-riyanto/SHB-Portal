@@ -69,3 +69,21 @@ class Payment(models.Model):
     verified = models.BooleanField(default=False)
     class Meta:
         constraints = [models.CheckConstraint(condition=Q(amount__gt=0),name='payment_positive')]
+
+class TransferProof(models.Model):
+    class Status(models.TextChoices):
+        PENDING = 'pending', 'Menunggu'
+        VERIFIED = 'verified', 'Diverifikasi'
+        REJECTED = 'rejected', 'Ditolak'
+    invoice = models.ForeignKey(Invoice, on_delete=models.PROTECT, related_name='proofs')
+    guardian = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name='transfer_proofs')
+    reported_amount = models.PositiveBigIntegerField()
+    transfer_date = models.DateField()
+    image = models.BinaryField()
+    image_type = models.CharField(max_length=12)
+    status = models.CharField(max_length=10, choices=Status.choices, default=Status.PENDING)
+    created_at = models.DateTimeField(auto_now_add=True)
+    reviewed_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name='reviewed_proofs', null=True, blank=True)
+    reviewed_at = models.DateTimeField(null=True, blank=True)
+    class Meta:
+        constraints = [models.CheckConstraint(condition=Q(reported_amount__gt=0),name='proof_amount_positive')]
