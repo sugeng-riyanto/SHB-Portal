@@ -30,7 +30,11 @@ def school_news(request):
 @login_required
 def dashboard(request):
     memberships = Membership.objects.filter(user=request.user, active=True).select_related('school')
-    invoices = scoped_invoices(request.user).select_related('enrollment__student','enrollment__classroom')[:100]
+    invoices = list(scoped_invoices(request.user).select_related('enrollment__student','enrollment__classroom')[:100])
+    guardian_schools = set(Membership.objects.filter(user=request.user, role=Membership.Role.GUARDIAN, active=True).values_list('school_id', flat=True))
+    linked_students = set(request.user.linked_students.values_list('id', flat=True))
+    for invoice in invoices:
+        invoice.may_upload_proof = invoice.enrollment.student.school_id in guardian_schools and invoice.enrollment.student_id in linked_students and not invoice.cancelled
     summary = aggregate_invoices(request.user).aggregate(count=Count('id'), total=Sum('amount'))
     return render(request, 'portal/dashboard.html', {'memberships': memberships, 'invoices': invoices, 'summary': summary})
 
