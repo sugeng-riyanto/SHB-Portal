@@ -99,3 +99,6 @@ Admin sekolah/superadmin dapat mengelola PaymentType dan ekspor; default Monthly
 
 ## Pemisahan dashboard super admin dan admin sekolah
 Dashboard menampilkan judul, menu dan scope berbeda: super admin lintas sekolah; admin sekolah sesuai membership aktif. Ringkasan admin sekarang menghitung hanya invoice dalam lingkup sekolahnya. Grafik ditata ulang untuk lebar layar kecil; dua tes akses/scope lulus lokal. Belum diuji visual pada perangkat nyata atau terhadap Supabase/RLS; semua grafik dan analitik yang direncanakan belum lengkap.
+
+## Bukti lunas awal
+Verifikasi bukti oleh admin menerbitkan PaymentReceipt hanya bila pembayaran terverifikasi memenuhi nominal+ denda, dengan nomor acak dan kode enam karakter. User dalam scope dapat unduh PDF dengan QR ke halaman verifikasi admin; admin login dibatasi scope sekolah. Tes parsial/lunas, PDF dan lintas sekolah lulus lokal SQLite. Ini belum tanda tangan digital atau sertifikat anti-pemalsuan offline. Gambar, tombol share WhatsApp/email, scan kamera, pencabutan/penggantian bukti jika koreksi, pembatasan percobaan, log verifikasi dan uji PostgreSQL/concurrency belum ada. QR perlu URL resmi HTTPS/proxy benar. Jangan pakai data nyata atau klaim siap produksi.
