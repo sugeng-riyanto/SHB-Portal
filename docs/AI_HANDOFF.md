@@ -87,3 +87,6 @@ Halaman Django admin diberi tema SHB menggunakan CSS lokal, bukan Tailwind (inst
 
 ## Pemeriksaan bukti dan komentar
 Tambah filter kelas, pilihan beberapa bukti, total nominal pada browser, verifikasi massal atomik (maks. 100 per permintaan) dan komentar pribadi pemilik bukti/admin. Pengunggahan diuji dengan CSRF aktif di Django test client. Tiga tes terarah lulus di SQLite; preview Freebuff tidak diakses, penyebab CSRF hilang pada preview belum diketahui. Perlu uji Postgres concurrency, audit, UI browser, admin koreksi nominal dan grup khusus; belum siap data asli.
+
+## Navbar responsif
+Navbar portal memakai tombol menu pada viewport kecil, target sentuh lebih besar, layout bahasa dan navigasi menyesuaikan layar, serta fallback tetap tampil saat JS tidak tersedia. Tes render dan pilihan bahasa lulus; belum ada uji visual pada browser/perangkat nyata. Django admin memiliki navbar sendiri.
