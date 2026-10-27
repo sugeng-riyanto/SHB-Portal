@@ -376,3 +376,11 @@ class DashboardAccessTests(TestCase):
         response=self.client.post('/accounts/login/?next=/kabar-sekolah/',{'username':user.username,'password':'Old-password-987!'})
         self.assertEqual(response.status_code,302)
         self.assertEqual(response['Location'],'/dashboard/')
+
+    def test_language_selector_default_and_choices(self):
+        response=self.client.get('/')
+        self.assertContains(response,'Stay connected with school')
+        self.client.cookies['django_language']='id'
+        self.assertContains(self.client.get('/'),'Terhubung dengan sekolah')
+        self.client.cookies['django_language']='zh-hant'
+        self.assertContains(self.client.get('/'),'與學校保持聯繫')
