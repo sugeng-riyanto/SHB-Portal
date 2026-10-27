@@ -339,3 +339,62 @@ Catatan kejujuran: karakter kontrol murni seperti `\x07` tidak bisa diuji lewat 
 Risiko yang belum tertutup: **constraint unik database masih case-sensitive** — `unique_nis_per_school` atas `(school, nis)` tidak menangkap NIS yang hanya berbeda huruf besar/kecil, sehingga penjaga duplikat kini hidup di lapisan aplikasi. Dua commit bersamaan dengan NIS seperti itu masih bisa lolos bersamaan; menutupnya perlu indeks unik yang dinormalkan pada level database (perubahan skema dan keputusan produk). Selain itu `stored_nis_keys` memuat seluruh NIS satu sekolah pada setiap unggahan (satu query per unggahan, sebanding jumlah murid sekolah), dan impor tetap hanya mendukung kolom `nis`/`nama_murid` — kelas dan wali lewat alur terpisah.
 
 Commit perbaikan ini: `416643a`.
+
+## 403 CSRF pada POST multipart preview: penyebab dan perbaikan — 27 Oktober 2026
+Belum di-commit. Berkas yang berubah: `config/asgi.py` (jembatan ASGI baru) dan `portal/tests.py` (kelas `AsgiChunkedMultipartTests`, 5 tes). Tidak ada rute, template atau pengaturan CSRF yang diubah; CSRF tidak dilonggarkan.
+
+**Gejala.** POST `/accounts/profile/` lewat preview menjawab `403 CSRF verification failed — Reason given for failure: CSRF token missing.` padahal halaman yang disajikan memang memuat token `<input type="hidden" name="csrfmiddlewaretoken" value="…">` (64 karakter), cookie `csrftoken` ikut terkirim (`Path=/; SameSite=Lax`, bukan HttpOnly), dan origin preview ada di `CSRF_TRUSTED_ORIGINS`. Log origin mencatat kejadian nyata dari tunnel: `Forbidden (CSRF token missing.): /accounts/profile/` lalu `HTTP POST /accounts/profile/ 403 [0.01, 10.31.252.165:59410]`.
+
+**Penyebab, bukan dugaan.** Proxy preview meneruskan body POST dengan `Transfer-Encoding: chunked` dan tanpa `Content-Length`. Untuk `multipart/form-data`, `MultiPartParser` mengambil ukuran body dari header itu — `django/http/multipartparser.py:96` (`content_length = int(META.get("CONTENT_LENGTH", 0))`) dan `:147-148` (`if self._content_length == 0: return QueryDict(...), MultiValueDict()`) — sehingga `request.POST` kosong tanpa galat apa pun dan `CsrfViewMiddleware` melaporkan token "missing". Form `application/x-www-form-urlencoded` tidak terkena karena mem-parse aliran body langsung; itulah sebabnya login berfungsi sementara profil dan unggahan tidak. Ini juga melengkapi temuan `## Preview chunked POST dan CSRF 403`: daphne memperbaiki body chunked secara umum, tetapi form multipart tetap gagal.
+
+Bukti probe raw socket ke server yang berjalan (framing chunked RFC, cookie + token + `Origin` sah):
+
+| Permintaan | Sebelum perbaikan | Sesudah |
+|---|---|---|
+| `/accounts/profile/` multipart + `Content-Length` + token | 302 | 302 |
+| `/accounts/profile/` multipart + chunked + token | **403 CSRF token missing** | 302 |
+| `/accounts/profile/` multipart + chunked, token dihapus | 403 CSRF token missing | 403 CSRF token missing |
+| `/accounts/profile/` multipart + chunked, `Origin` asing | 403 origin | 403 origin |
+| `/accounts/profile/` urlencoded + chunked + token | 302 | 302 |
+| `/students/import/` multipart chunked (admin) | **403** | 200 (validasi aplikasi) |
+
+Pemeriksaan pendukung: sembilan pengulangan (1/2/5 chunk) multipart konsisten 403 sebelum perbaikan, sedangkan `WSGIRequest` dengan body chunked tanpa `CONTENT_LENGTH` menghasilkan `request.POST == {}`.
+
+**Perbaikan.** `config/asgi.py` membungkus aplikasi Django dengan `ChunkedMultipartBody`: hanya untuk `POST`/`PUT`/`PATCH`, hanya bila permintaan tidak punya `content-length`, hanya bila `transfer-encoding: chunked`, dan hanya untuk `content-type: multipart/form-data`. Body dispool (`SpooledTemporaryFile`, pindah ke disk di atas 1 MiB) satu kali lalu diputar ulang ke Django bersama `content-length` yang sebenarnya. Setelah body selesai, frame `http.request` sisa dibuang dan hanya pesan non-request yang diteruskan, karena Django menolak apa pun selain disconnect setelah body dibaca (`listen_for_disconnect`). Dua kegagalan awal perbaikan ini ditemukan dan ditutup saat pengujian: `self.application(scope, replay)` tanpa `send` menyebabkan 500, dan meneruskan frame body sisa memicu `AssertionError: Invalid ASGI message after request body`.
+
+**Hasil.** Kelas `AsgiChunkedMultipartTests` **5 tes OK** (multipart chunked bertoken sampai ke pipeline; tanpa token 403; origin asing 403; permintaan yang sudah punya panjang, urlencoded chunked, dan GET lewat tanpa disentuh; body chunked diputar utuh dengan panjang asli terpasang). Seluruh suite SQLite **85 tes OK (2 skip)**, 5 tes domain OK, `manage.py check` bersih, dan preview hidup setelah perubahan (host preview 200, `/accounts/login/` 200, `/static/portal/app.css` 200) dengan **0 traceback/500** pada log sejak restart.
+
+**Risiko dan batasan.** (1) Perbaikan hidup di pintu masuk ASGI; jalur WSGI tidak dapat menangani body chunked sama sekali, jadi preview tetap harus dijalankan dengan daphne terpasang (masih di luar `requirements.txt`). (2) Body multipart chunked kini melewati satu salinan memori/disk tambahan sebelum Django; batas berkas aplikasi (2 MB) menahan dampaknya, tetapi unggahan chunked berukuran sangat besar belum diuji. (3) Verifikasi dilakukan lewat HTTP di dalam VM, bukan di browser pemilik; URL HTTPS publik masih 403 milik gateway, jadi klik nyata pada "Simpan profil" masih menunggu konfirmasi. (4) Perubahan belum di-commit dan belum dijalankan pada PostgreSQL — tes baru tidak menyentuh database sehingga mesin tidak berpengaruh.
+
+## Kunci enkripsi integrasi dan alur lupa password — 27 Oktober 2026
+Branch `freebuff/ac9ad268c61424b55ab6a2ea`, belum di-commit. Berkas berubah/tambah: `config/urls.py`, `portal/account.py`, `portal/tests.py`, `portal/templates/registration/` (6 berkas baru), `.gitignore`, `docs/DECISIONS.md`.
+
+**Kunci enkripsi integrasi.** Dibuat sekali dengan `Fernet.generate_key()` dan disimpan di `.secrets/shb_integration_encryption.key` (mode 600, direktori 700) yang sudah masuk `.gitignore`; `git check-ignore` membuktikan tidak terlacak dan `git status` tidak menampilkannya. Sidik jari SHA-256 16 hex `a63b4109d0b67d45` dicatat agar perubahan kunci dapat dideteksi tanpa membuka nilainya. Nilai kunci tidak pernah dicetak ke chat, perintah, atau log: 0 kemunculan pola `gAAAAA` dan 0 kemunculan `SHB_INTEGRATION_ENCRYPTION_KEY=` pada `/tmp/shb-server.log`. Salinan backup terbatas ada di `.secrets/backup/…` (mode 600) — **satu volume, bukan backup offsite**. Preview membacanya dari berkas ke environment proses; hasilnya `/superadmin/integrations/` **200** tanpa peringatan "Kunci enkripsi server belum diatur" dan `cipher()` siap.
+
+**Lupa password.** Rute `/accounts/password-reset/`, `/done/`, `/<uidb64>/<token>/`, `/complete/` memakai tampilan bawaan Django dengan template proyek, dan halaman login menautkannya. Email hanya teks, memuat tautan sekali pakai, dan tidak pernah memuat password. `PortalPasswordResetView` mengembalikan respons non-disclosing yang sama bila SMTP tidak dapat dihubungi (environment ini `SHB_EMAIL_ENABLED=0`), sehingga permintaan tidak berakhir 500.
+
+**Hasil uji.** `PasswordResetFlowTests` **6 tes OK** pada SQLite dan pada PostgreSQL 16.2 (`scripts/pg_test.sh portal.tests.PasswordResetFlowTests`, klaster terpisah `/tmp/shb-pg-lupa` port 55435); suite penuh SQLite **91 tes OK (2 skip)**. Di preview: `/accounts/password-reset/` 200 (memuat field email), `/done/` 200, `/complete/` 200, token palsu 200 dengan pesan "tidak valid", tautan lupa password tampil di halaman login, dan 0 baris galat pada log.
+
+**Risiko.** (1) Pengiriman email sungguhan belum terbukti: SMTP dimatikan dan belum ada kredensial, jadi bukti pengiriman berasal dari outbox email Django, bukan kotak surat nyata. (2) `DEFAULT_FROM_EMAIL` kosong bila `SMTP_FROM_EMAIL` tidak diisi. (3) Masa berlaku tautan mengikuti `PASSWORD_RESET_TIMEOUT` bawaan Django (3 hari) dan belum disesuaikan kebijakan sekolah. (4) Belum ada pembatasan kecepatan pada permintaan reset. (5) Kunci enkripsi masih berupa berkas di VM, belum dipindahkan ke secret manager; worktree yang dibangun ulang harus memulihkannya dari backup.
+
+Berikutnya: pindahkan kunci ke secret manager, aktifkan SMTP uji untuk membuktikan pengiriman nyata, dan tambahkan pembatasan permintaan reset.
+
+## Pull request #3 dan run CI 40598940008 — 27 Oktober 2026
+
+**Pull request.** PR #3 "Harden the student XLSX import against the preview probe findings", branch `freebuff/ac9ad268c61424b55ab6a2ea` (`be0f141`) → `main` (`5dce8df`): OPEN, bukan draft, `mergeable=MERGEABLE` / `mergeStateStatus=CLEAN`, +151/−10 pada 3 berkas (`portal/students.py`, `portal/tests.py`, `docs/AI_HANDOFF.md`). **Belum di-merge**, dan `main` belum pernah menjalankan workflow ini karena trigger `push` hanya berlaku setelah merge. PR dibuat dengan `gh` yang terautentikasi sebagai `sugeng-riyanto`; catatan operasional: otorisasi perangkat harus diulang setiap kali runner cloud berganti, karena proses `gh auth login` ikut mati saat runner berhenti.
+
+**Lingkungan run CI.** Runner `ubuntu-latest`, Python 3.12 (sama dengan `.venv` lokal), action dipin ke tag major Node 24 (`actions/checkout@v7`, `actions/setup-python@v7`, `actions/upload-artifact@v7`). Dua job berdampingan: `sqlite` menjalankan `python manage.py test portal`; `postgresql` menjalankan `./scripts/pg_test.sh` dengan klaster `pgserver` pada `$RUNNER_TEMP/shb-pgdata` port 55432.
+
+**Hasil run 40598940008** (workflow `Tests`, event `pull_request`, sha `be0f141`, mulai 2026-10-27T22:59:52Z, selesai 23:01:44Z, **conclusion success**):
+
+| Job / check | Hasil | Durasi |
+|---|---|---|
+| Django suite (PostgreSQL) | success | 1m06s |
+| Django suite (SQLite) | success | 1m49s |
+| GitGuardian Security Checks | pass | 32s |
+
+Step `Upload PostgreSQL logs on failure` **skipped** — itu justru bukti step tes PostgreSQL tidak gagal, bukan bukti log terunggah. `gh run view --log-failed` kosong dan tidak ada anotasi. Bukti lokal pada commit yang sama: suite SQLite 85 tes OK (2 skip) sebelum perubahan sesudahnya.
+
+**Risiko.** Action dipin ke tag major, bukan SHA commit; tidak ada job lint, `collectstatic`, maupun coverage; 5 tes domain tidak punya job sendiri; ketersediaan wheel `pgserver` untuk image runner bisa berubah tanpa peringatan; PR belum di-merge sehingga perilaku workflow pada `main` belum terbukti.
+
+**Tugas berikutnya.** Jalankan workflow pada `main` setelah merge, pin action ke SHA, tambahkan job untuk 5 tes domain dan lint, lalu tinjau ulang setelah kredensial staging tersedia.

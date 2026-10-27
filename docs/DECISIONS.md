@@ -17,3 +17,22 @@ Diputuskan: 1–3 wali per murid; akun dibagikan lewat undangan aktivasi; opsi p
 
 ## Keputusan rekening dan sibling
 Diminta: kepala sekolah CRUD rekening sekolah; XLSX memuat VA atau tujuan transfer bank; satu akun wali untuk beberapa anak. Perlu klarifikasi arti 'susulan ke alamat bank tertentu': apakah instruksi transfer, rekening alternatif, atau VA menyusul setelah impor. Juga tentukan siapa berwenang mengoreksi tujuan pada tagihan yang sudah terbit, apakah nomor VA diberikan bank dan apakah pembayaran otomatis direkonsiliasi.
+
+## Alur perubahan tabel dan database (diputuskan 27 Oktober 2026)
+Diputuskan: **migration Django adalah satu-satunya sumber utama perubahan skema.** Tabel yang sama tidak dibuat ulang melalui Dashboard Supabase atau migration Supabase, dan tidak ada antarmuka (termasuk dashboard integrasi) yang menjalankan SQL bebas dari browser.
+
+Alur kerja yang disetujui:
+
+1. Permintaan perubahan disampaikan lewat chat, tanpa menulis SQL sendiri.
+2. Perubahan disiapkan sebagai migration Django di repositori, beserta tes hak akses dan data sintetis.
+3. Migration dijalankan lebih dulu pada Supabase **staging**, lalu hasilnya diperiksa (inventaris tabel, status RLS dan akses Data API, isolasi peran).
+4. Setelah pemeriksaan lolos dan backup tersedia, perubahan diterapkan ke produksi dan dicatat di `AI_HANDOFF.md`.
+
+Pengamanan yang menyertainya: kredensial database hanya di server/secret manager, bukan di browser, Git, atau chat; otorisasi tetap ditegakkan di backend walaupun koneksi melewati RLS; tabel hanya diekspos ke Data API bila RLS dan grant minimal sudah tersedia; staging terpisah dan uji restore wajib sebelum data murid nyata (lihat `BACKUP_RESTORE.md`, `SUPABASE_SETUP.md`, `RELEASE_GATES.md`).
+
+Status: belum ada perubahan yang dijalankan. Proyek staging `uxmdorvxnzelpduvkpuj` masih tanpa tabel, dan kredensialnya belum tersedia di workspace ini.
+
+## Kunci enkripsi integrasi (diputuskan 27 Oktober 2026)
+Diputuskan: `SHB_INTEGRATION_ENCRYPTION_KEY` disimpan di server/secret manager — bukan di browser, Git, atau chat — dan nilainya tidak pernah ditampilkan kembali. Kunci **tidak boleh digenerate ulang** selama masih ada baris `IntegrationConfig` terenkripsi, karena data lama tidak dapat didekripsi lagi; penggantian kunci harus berupa prosedur dekripsi-ulang yang dicatat. Backup terbatas disimpan terpisah dari aplikasi dan juga di password manager sekolah.
+
+Status: kunci dibuat 27 Oktober 2026 (sidik jari SHA-256 16 hex `a63b4109d0b67d45`), disimpan di `.secrets/` yang diabaikan Git, dan diberikan ke preview melalui environment proses.

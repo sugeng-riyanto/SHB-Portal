@@ -1044,3 +1044,253 @@ class StudentImportValidationTests(TestCase):
         token=re.search(r'name="token" value="([^"]+)"',response.content.decode()).group(1)
         self.assertEqual(self.client.post('/students/import/commit/',{'token':token}).status_code,302)
         self.assertEqual(sorted(Student.objects.filter(nis__startswith='900').values_list('nis',flat=True)),['9001','9002'])
+
+
+class AsgiChunkedMultipartTests(TestCase):
+    """The preview proxy forwards form bodies chunked and without Content-Length.
+
+    Django's MultiPartParser takes the body size from CONTENT_LENGTH and returns an
+    empty POST when the header is absent (django/http/multipartparser.py), so every
+    multipart/form-data post — the profile form and every upload form — failed CSRF
+    with "CSRF token missing" while urlencoded posts kept working. config/asgi.py
+    forwards the real length; these tests pin that behaviour and prove CSRF is still
+    enforced.
+    """
+    boundary='shb-test-boundary'
+    origin='https://pv-ac9ad268c614-51b1306d-b202-4d34-b04b-346824493b23.style.dev'
+    secret='a'*32
+
+    def multipart_body(self, token=None):
+        fields=[('first_name',b'Budi'),('last_name',b'Test')]
+        if token is not None:
+            fields.insert(0,('csrfmiddlewaretoken',token.encode()))
+        body=b''
+        for name,value in fields:
+            body+=('--%s\r\nContent-Disposition: form-data; name="%s"\r\n\r\n'%(self.boundary,name)).encode()+value+b'\r\n'
+        body+=('--%s\r\nContent-Disposition: form-data; name="photo"; filename=""\r\nContent-Type: application/octet-stream\r\n\r\n\r\n--%s--\r\n'%(self.boundary,self.boundary)).encode()
+        return body
+
+    def scope(self, headers, path='/accounts/profile/'):
+        return {'type':'http','asgi':{'version':'3.0'},'http_version':'1.1','method':'POST','scheme':'http',
+                'path':path,'raw_path':path.encode(),'query_string':b'','root_path':'',
+                'server':('testserver',80),'client':('127.0.0.1',1234),'headers':headers}
+
+    def multipart_headers(self, origin=None, content_type=None):
+        return [(b'host',b'testserver'),
+                (b'content-type',(content_type or 'multipart/form-data; boundary=%s'%self.boundary).encode()),
+                (b'cookie',('csrftoken=%s'%self.secret).encode()),
+                (b'origin',(origin or self.origin).encode()),
+                (b'referer',((origin or self.origin)+'/accounts/profile/').encode()),
+                (b'transfer-encoding',b'chunked')]
+
+    def drive(self, application, scope, chunks):
+        from asgiref.sync import async_to_sync
+        from asgiref.testing import ApplicationCommunicator
+        async def run():
+            communicator=ApplicationCommunicator(application,scope)
+            for body,more in chunks:
+                await communicator.send_input({'type':'http.request','body':body,'more_body':more})
+            message=await communicator.receive_output(timeout=5)
+            while message['type']!='http.response.start':
+                message=await communicator.receive_output(timeout=5)
+            status=message['status']
+            body=b''
+            while True:
+                message=await communicator.receive_output(timeout=5)
+                body+=message.get('body',b'')
+                if not message.get('more_body'):
+                    break
+            return status,body
+        return async_to_sync(run)()
+
+    def test_chunked_multipart_post_reaches_django_with_csrf(self):
+        from config.asgi import application
+        body=self.multipart_body(token=self.secret)
+        half=len(body)//2
+        status,response=self.drive(application,self.scope(self.multipart_headers()),
+                                   [(body[:half],True),(body[half:],False)])
+        # CSRF passed, so the pipeline now redirects the anonymous post to login.
+        self.assertEqual(status,302)
+
+    def test_chunked_multipart_post_without_token_is_still_rejected(self):
+        from config.asgi import application
+        body=self.multipart_body()
+        half=len(body)//2
+        status,response=self.drive(application,self.scope(self.multipart_headers()),
+                                   [(body[:half],True),(body[half:],False)])
+        self.assertEqual(status,403)
+        self.assertIn(b'CSRF verification failed',response)
+
+    def test_chunked_multipart_post_from_untrusted_origin_is_rejected(self):
+        from config.asgi import application
+        body=self.multipart_body(token=self.secret)
+        half=len(body)//2
+        status,response=self.drive(application,self.scope(self.multipart_headers(origin='https://evil.example.test')),
+                                   [(body[:half],True),(body[half:],False)])
+        self.assertEqual(status,403)
+        self.assertIn(b'CSRF verification failed',response)
+
+    def test_requests_without_the_problem_are_passed_through_untouched(self):
+        from config.asgi import ChunkedMultipartBody
+        seen={}
+        async def inner(scope,receive,send):
+            seen['scope']=scope
+            seen['messages']=[]
+            while True:
+                message=await receive()
+                seen['messages'].append(message)
+                if message.get('type')!='http.request' or not message.get('more_body'):
+                    break
+            await send({'type':'http.response.start','status':200,'headers':[]})
+            await send({'type':'http.response.body','body':b''})
+        bridge=ChunkedMultipartBody(inner)
+        cases={'already has a length':[(b'content-length',b'12'),(b'content-type',b'multipart/form-data; boundary=x')],
+               'chunked but urlencoded':[(b'content-type',b'application/x-www-form-urlencoded'),(b'transfer-encoding',b'chunked')],
+               'chunked multipart on GET':[(b'content-type',b'multipart/form-data; boundary=x'),(b'transfer-encoding',b'chunked')]}
+        for label,headers in cases.items():
+            scope=self.scope(list(headers),path='/accounts/profile/')
+            if label.endswith('GET'): scope['method']='GET'
+            status,_=self.drive(bridge,scope,[(b'first_name=Budi&last_name=Test',False)])
+            self.assertEqual(status,200,'the inner app must answer untouched: %s'%label)
+            self.assertEqual([value for name,value in seen['scope']['headers'] if name==b'content-length'],
+                             [value for name,value in scope['headers'] if name==b'content-length'],'unexpected length injected for: %s'%label)
+            self.assertEqual(seen['messages'][0]['body'],b'first_name=Budi&last_name=Test','body must reach the app: %s'%label)
+
+    def test_chunked_multipart_body_is_replayed_whole_in_blocks(self):
+        from unittest.mock import patch
+        from config.asgi import ChunkedMultipartBody
+        seen={}
+        async def inner(scope,receive,send):
+            seen['scope']=scope
+            body=b''
+            while True:
+                message=await receive()
+                body+=message.get('body',b'')
+                if not message.get('more_body'):
+                    break
+            seen['body']=body
+            await send({'type':'http.response.start','status':200,'headers':[]})
+            await send({'type':'http.response.body','body':b''})
+        body=self.multipart_body(token=self.secret)
+        third=len(body)//3
+        chunks=[(body[:third],True),(body[third:2*third],True),(body[2*third:],False)]
+        with patch('config.asgi.READ_BLOCK',8):
+            self.drive(ChunkedMultipartBody(inner),self.scope(self.multipart_headers()),chunks)
+        self.assertEqual(seen['body'],body,'the full body must arrive unchanged')
+        self.assertIn((b'content-length',str(len(body)).encode()),seen['scope']['headers'],'the real length must be published')
+
+
+class _ExplodingEmailBackend:
+    """Pretends the mail server is unreachable, to pin the graceful failure path."""
+
+    def __init__(self,*args,**kwargs): pass
+    def open(self): return None
+    def close(self): return None
+    def send_messages(self,email_messages): raise OSError('smtp server unreachable (test only)')
+
+
+class PasswordResetFlowTests(TestCase):
+    """Lupa password: tautan sekali pakai ke alamat terdaftar, tanpa password lama.
+
+    Memakai tampilan bawaan Django (PasswordResetView dan kawan-kawan) dengan template
+    proyek. Yang dikunci di sini: email hanya dikirim ke alamat terdaftar, isinya memuat
+    tautan reset dan tidak pernah memuat password, tautan hanya bekerja sekali, alamat
+    yang tidak terdaftar tidak mengungkap apa pun, akun nonaktif tidak menerima email,
+    dan SMTP yang tidak dapat dihubungi tidak menghasilkan 500.
+    """
+    old_password='Lama!2345'
+    new_password='Baru!67890'
+
+    def setUp(self):
+        from django.contrib.auth import get_user_model
+        User=get_user_model()
+        self.user=User.objects.create_user(username='wali.uji@example.test',email='wali.uji@example.test',password=self.old_password)
+        self.user.first_name,self.user.last_name='Wali','Uji'
+        self.user.save()
+
+    def mail_settings(self):
+        from django.test import override_settings
+        return override_settings(EMAIL_BACKEND='django.core.mail.backends.locmem.EmailBackend',DEFAULT_FROM_EMAIL='no-reply@example.test')
+
+    def request_reset(self,email):
+        return self.client.post('/accounts/password-reset/',{'email':email})
+
+    def link_from_last_email(self):
+        import re
+        from django.core import mail
+        match=re.search(r'https?://[^\s]+/accounts/password-reset/[^\s]+',mail.outbox[-1].body)
+        self.assertIsNotNone(match,'email reset harus memuat tautan')
+        return match.group(0)
+
+    def test_pages_are_reachable_and_login_links_to_the_flow(self):
+        form=self.client.get('/accounts/password-reset/')
+        self.assertEqual(form.status_code,200)
+        self.assertContains(form,'Kirim tautan reset')
+        self.assertEqual(self.client.get('/accounts/password-reset/done/').status_code,200)
+        self.assertContains(self.client.get('/accounts/login/'),'/accounts/password-reset/')
+
+    def test_registered_address_gets_one_email_without_any_password(self):
+        from django.core import mail
+        with self.mail_settings():
+            response=self.request_reset('wali.uji@example.test')
+        self.assertEqual(response.status_code,302)
+        self.assertEqual(len(mail.outbox),1,'tepat satu email per permintaan')
+        message=mail.outbox[0]
+        self.assertEqual(message.to,['wali.uji@example.test'])
+        self.assertIn('/accounts/password-reset/',message.body)
+        self.assertIn('satu kali',message.body.lower())
+        self.assertNotIn(self.old_password,message.body,'password lama tidak boleh dikirim')
+        self.assertNotIn(self.new_password,message.body)
+        self.assertEqual(len(message.subject.splitlines()),1)
+
+    def test_unknown_address_sends_nothing_and_reveals_nothing(self):
+        from django.core import mail
+        with self.mail_settings():
+            response=self.request_reset('bukan.siapa@example.test')
+        self.assertEqual(response.status_code,302)
+        self.assertEqual(len(mail.outbox),0,'alamat tidak terdaftar tidak boleh dikirimi email')
+        done=self.client.get('/accounts/password-reset/done/')
+        self.assertContains(done,'Jika alamat itu terdaftar')
+        self.assertNotContains(done,'bukan.siapa@example.test')
+
+    def test_inactive_account_receives_no_email(self):
+        from django.core import mail
+        self.user.is_active=False
+        self.user.save(update_fields=['is_active'])
+        with self.mail_settings():
+            response=self.request_reset('wali.uji@example.test')
+        self.assertEqual(response.status_code,302)
+        self.assertEqual(len(mail.outbox),0,'akun nonaktif tidak boleh bisa direset')
+
+    def test_link_works_once_and_never_again(self):
+        from urllib.parse import urlsplit
+        with self.mail_settings():
+            self.request_reset('wali.uji@example.test')
+            path=urlsplit(self.link_from_last_email()).path
+            first=self.client.get(path)
+            self.assertEqual(first.status_code,302,'tautan token mengalihkan ke formulir password baru')
+            set_password_path=first['Location']
+            self.assertIn('/accounts/password-reset/',set_password_path)
+            saved=self.client.post(set_password_path,{'new_password1':self.new_password,'new_password2':self.new_password})
+            self.assertEqual(saved.status_code,302)
+            self.assertTrue(self.client.login(username='wali.uji@example.test',password=self.new_password))
+            self.assertFalse(self.client.login(username='wali.uji@example.test',password=self.old_password))
+            self.client.logout()
+            reuse=self.client.get(path)
+            if reuse.status_code==302:
+                reuse=self.client.get(reuse['Location'])
+            self.assertEqual(reuse.status_code,200)
+            self.assertContains(reuse,'tidak valid atau sudah pernah dipakai')
+            self.assertNotContains(reuse,'Simpan password baru')
+            blocked=self.client.post(set_password_path,{'new_password1':'Lain!11223','new_password2':'Lain!11223'})
+            self.assertEqual(blocked.status_code,200)
+            self.assertTrue(self.client.login(username='wali.uji@example.test',password=self.new_password),
+                            'password tidak boleh berubah karena tautan yang sudah terpakai')
+            self.assertFalse(self.client.login(username='wali.uji@example.test',password='Lain!11223'))
+
+    def test_unreachable_mail_server_does_not_break_the_request(self):
+        from django.test import override_settings
+        with override_settings(EMAIL_BACKEND=__name__+'._ExplodingEmailBackend',DEFAULT_FROM_EMAIL='no-reply@example.test'):
+            response=self.request_reset('wali.uji@example.test')
+        self.assertEqual(response.status_code,302,'SMTP mati tidak boleh jadi 500 atau membocorkan status akun')
+        self.assertContains(self.client.get('/accounts/password-reset/done/'),'Jika alamat itu terdaftar')

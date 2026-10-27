@@ -1,6 +1,13 @@
 __pycache__/
 *.py[cod]
 .env
+# Berkas rahasia lokal/server apa pun. Templat tetap dilacak agar contoh aman ikut ter-commit.
+.env.*
+!.env.example
+# Kunci/rahasia lokal server (kunci enkripsi integrasi + backup terbatas).
+.secrets/
+# Berkas kerja platform (run doc preview).
+.freebuff/
 .venv/
 db.sqlite3
 media/

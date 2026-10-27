@@ -1,6 +1,6 @@
 from django.contrib import admin
 from django.contrib.auth import views as auth_views
-from django.urls import path, include
+from django.urls import path, include, reverse_lazy
 from portal import views, students, banks, messaging, account, integrations, payment_types, exports, receipts, announcements
 urlpatterns = [
     path("i18n/", include("django.conf.urls.i18n")),
@@ -59,5 +59,9 @@ urlpatterns = [
     path('accounts/profile/',account.profile,name='profile'),
     path('accounts/profile/photo/',account.profile_photo,name='profile_photo'),
     path('accounts/password/',account.change_password,name='change_password'),
+    path('accounts/password-reset/',account.PortalPasswordResetView.as_view(),name='password_reset'),
+    path('accounts/password-reset/done/',auth_views.PasswordResetDoneView.as_view(template_name='registration/password_reset_done.html'),name='password_reset_done'),
+    path('accounts/password-reset/<uidb64>/<token>/',auth_views.PasswordResetConfirmView.as_view(template_name='registration/password_reset_confirm.html',success_url=reverse_lazy('password_reset_complete')),name='password_reset_confirm'),
+    path('accounts/password-reset/complete/',auth_views.PasswordResetCompleteView.as_view(template_name='registration/password_reset_complete.html'),name='password_reset_complete'),
     path('accounts/logout/',auth_views.LogoutView.as_view(),name='logout'),
 ]
