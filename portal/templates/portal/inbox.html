@@ -1,0 +1,1 @@
+{% extends 'portal/base.html' %}{% block content %}<section class="card"><h1>Pesan masuk</h1>{% for item in messages %}<article class="card"><h2>{{ item.subject }}</h2><p>{{ item.created_at }}</p><p>{{ item.body|linebreaksbr }}</p></article>{% empty %}<p>Belum ada pesan.</p>{% endfor %}</section>{% endblock %}
