@@ -76,6 +76,7 @@ class TransferProof(models.Model):
         PENDING = 'pending', 'Menunggu'
         VERIFIED = 'verified', 'Diverifikasi'
         REJECTED = 'rejected', 'Ditolak'
+        WITHDRAWN = 'withdrawn', 'Ditarik'
     invoice = models.ForeignKey(Invoice, on_delete=models.PROTECT, related_name='proofs')
     guardian = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name='transfer_proofs')
     reported_amount = models.PositiveBigIntegerField()

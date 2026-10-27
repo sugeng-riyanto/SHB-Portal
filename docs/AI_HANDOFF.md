@@ -111,6 +111,12 @@ Login Django membuat profil awal yang mewajibkan perubahan password sebelum masu
 
 ## Landing page dan kabar sekolah
 Landing page menggunakan bahasa yang lebih hangat; halaman /kabar-sekolah/ menampilkan maksimal enam kabar yang telah diterbitkan dan waktu publikasinya sudah tiba. Superuser Django dapat mengelola SchoolUpdate di /admin/; belum ada antarmuka admin sekolah. Link Instagram/Facebook/YouTube diatur melalui environment HTTPS dan dibuka pada tab baru. Belum ada akun resmi yang dikonfigurasi. Dua tes lokal lulus; belum ada uji visual browser.
+
+## Bahasa
+Default English dan pilihan English/Indonesia/Mandarin Tradisional pada bagian landing, navigasi, login dan dashboard dasar. Terjemahan masih parsial: formulir Django, teks dinamis, pengumuman, email, beberapa halaman fitur, tombol tema dan pesan validasi belum seluruhnya diterjemahkan; jangan klaim bilingual lengkap. CSS/JS tetap lokal.
+
+## Bukti transfer: edit dan tarik
+Wali pemilik dengan relasi aktif dapat mengubah nominal/tanggal/foto dan menarik bukti pending. Bukti diverifikasi tidak dapat diubah/ditarik; uji pemilik dan wali lain lulus di SQLite. Riwayat perubahan field/audit, validasi konkurensi PostgreSQL, storage terenkripsi, seluruh RBAC/CRUD dan terjemahan tetap belum lengkap.
 ## Tarik main terbaru dan verifikasi CSRF preview — 27 Oktober 2026
 Main ditarik lagi: satu commit baru `5b943e8` (Test demo role logins with CSRF enforcement) di-merge ke branch ini sebagai `37b6611`; konflik hanya pada `portal/tests.py` dan diselesaikan dengan menjaga kedua sisi. Tes baru itu memanggil `seed_demo`, jadi guard pemeriksaan SQLite yang sama ditambahkan agar tidak gagal pada PostgreSQL. Hasil: 37 tes Django lulus pada SQLite (2 skip) dan pada PostgreSQL 16.2 (5 skip), 5 tes domain lulus; `migrate` tanpa migrasi baru.
 

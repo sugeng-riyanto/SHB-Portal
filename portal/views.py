@@ -85,6 +85,7 @@ def proofs_list(request):
         admin_schools.update(School.objects.values_list('id', flat=True))
     for proof in proofs:
         proof.may_verify = proof.invoice.enrollment.student.school_id in admin_schools
+        proof.may_edit = proof.guardian_id == request.user.id and proof.status == TransferProof.Status.PENDING
     return render(request, 'portal/proofs.html', {'proofs': proofs})
 
 @login_required
@@ -155,3 +156,40 @@ def integration_settings(request):
     ]
     states = [{'name': name, 'configured': all(bool(os.environ.get(k)) for k in keys)} for name, keys in groups]
     return render(request, 'portal/integrations.html', {'states': states})
+
+@login_required
+def proof_edit(request, proof_id):
+    proof = get_object_or_404(accessible_proofs(request.user).filter(guardian=request.user), pk=proof_id)
+    if proof.status != TransferProof.Status.PENDING:
+        raise Http404
+    context = {'proof': proof}
+    if request.method == 'POST':
+        try:
+            amount = int(request.POST.get('amount', ''))
+            transfer_date = date.fromisoformat(request.POST.get('transfer_date', ''))
+            if amount <= 0: raise ValueError('Nominal tidak valid.')
+            data, kind = (proof.image, proof.image_type)
+            if request.FILES.get('image'):
+                data, kind = validate_image(request.FILES['image'])
+            with transaction.atomic():
+                locked = get_object_or_404(TransferProof.objects.select_for_update(),pk=proof_id,guardian=request.user)
+                if locked.status != TransferProof.Status.PENDING: return HttpResponseBadRequest('Bukti tidak dapat diubah.')
+                # Recheck active membership and guardian relationship after acquiring the lock.
+                if not accessible_proofs(request.user).filter(pk=proof_id).exists(): raise Http404
+                locked.reported_amount=amount; locked.transfer_date=transfer_date; locked.image=data; locked.image_type=kind
+                locked.save(update_fields=['reported_amount','transfer_date','image','image_type'])
+            return redirect('proofs_list')
+        except (ValueError, OverflowError) as exc:
+            context['error']=str(exc) or 'Data tidak valid.'
+    return render(request, 'portal/proof_edit.html', context)
+
+@login_required
+@require_POST
+def proof_withdraw(request, proof_id):
+    with transaction.atomic():
+        proof=get_object_or_404(TransferProof.objects.select_for_update(),pk=proof_id,guardian=request.user)
+        if not accessible_proofs(request.user).filter(pk=proof_id).exists(): raise Http404
+        if proof.status != TransferProof.Status.PENDING: return HttpResponseBadRequest('Bukti tidak dapat ditarik.')
+        proof.status=TransferProof.Status.WITHDRAWN
+        proof.save(update_fields=['status'])
+    return redirect('proofs_list')

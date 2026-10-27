@@ -1,8 +1,9 @@
 from django.contrib import admin
 from django.contrib.auth import views as auth_views
-from django.urls import path
+from django.urls import path, include
 from portal import views, students, banks, messaging, account
 urlpatterns = [
+    path("i18n/", include("django.conf.urls.i18n")),
     path('admin/', admin.site.urls), path('',views.home,name='home'),
     path('kabar-sekolah/',views.school_news,name='school_news'),
     path('dashboard/',views.dashboard,name='dashboard'),
@@ -24,6 +25,8 @@ urlpatterns = [
     path('superadmin/integrations/', views.integration_settings, name='integration_settings'),
     path('invoices/<int:invoice_id>/proof/', views.proof_upload, name='proof_upload'),
     path('proofs/<int:proof_id>/image/', views.proof_image, name='proof_image'),
+    path('proofs/<int:proof_id>/edit/', views.proof_edit, name='proof_edit'),
+    path('proofs/<int:proof_id>/withdraw/', views.proof_withdraw, name='proof_withdraw'),
     path('proofs/<int:proof_id>/verify/', views.proof_verify, name='proof_verify'),
     path('imports/template.xlsx', views.xlsx_template, name='xlsx_template'),
     path('accounts/login/',account.PortalLoginView.as_view(),name='login'),
