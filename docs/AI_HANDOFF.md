@@ -105,3 +105,6 @@ Verifikasi bukti oleh admin menerbitkan PaymentReceipt hanya bila pembayaran ter
 
 ## Pengumuman kegiatan dan persetujuan kepala sekolah
 Admin sekolah dapat membuat/mengubah/menghapus draft berisi judul, paragraf, tanggal dan tautan PDF HTTPS, lalu kirim untuk persetujuan. Kepala sekolah dengan membership aktif pada sekolah terkait dapat menyetujui; approved immutable; QR menuju halaman verifikasi yang memerlukan login admin/kepala sekolah sesuai scope. QR adalah referensi verifikasi dalam portal, bukan tanda tangan digital tersertifikasi. 2 tes terarah SQLite lulus. Belum ada PDF upload/embed, generator teks AI, penerbitan ke halaman publik/akun wali, notifikasi, pembatalan/revisi pascaapproval, audit lengkap, validasi Postgres concurrency atau e-signature. Jangan gunakan data nyata sebelum staging/security selesai.
+
+## Impor data murid XLSX
+Admin/superadmin dapat mengunduh template NIS dan nama murid, unggah, preview validasi, lalu menyimpan seluruh baris valid dengan konfirmasi. Akses dibatasi sekolah, duplikasi dicek, session preview berlaku 20 menit, dan commit atomik. Dua tes SQLite lulus untuk scope, NIS teks, duplikasi dan replay. Template ini belum memasukkan kelas, NISN, wali/email, sehingga bukan impor tagihan dan belum menghubungkan akun wali. Uji PostgreSQL/concurrency, audit dan data nyata belum dilakukan.
