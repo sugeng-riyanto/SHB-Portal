@@ -518,3 +518,10 @@ class DashboardAccessTests(TestCase):
         self.client.force_login(admin)
         self.assertContains(self.client.get(f'/proofs/{proof.pk}/comments/'),'Mohon diperiksa')
         self.assertEqual(ProofComment.objects.count(),1)
+
+    def test_responsive_navigation_has_accessible_toggle(self):
+        response=self.client.get('/')
+        self.assertContains(response,'data-menu-toggle')
+        self.assertContains(response,'aria-controls="main-navigation"')
+        self.assertContains(response,'id="main-navigation"')
+        self.assertContains(response,'/static/portal/app.js')
