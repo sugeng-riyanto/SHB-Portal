@@ -48,3 +48,6 @@ Akun Django is_superuser aktif dapat mengakses semua sekolah untuk dashboard dan
 
 ## Data murid awal
 Admin sekolah dan superuser dapat melihat, mencari, menambah, mengubah, menonaktifkan dan ekspor XLSX data murid dalam scope; ekspor menghindari formula injection. 24 tes Django SQLite lulus. Relasi wali, impor murid, audit, pagination, RLS dan fitur CRUD lainnya belum selesai; jangan gunakan data nyata.
+
+## Rekening sekolah awal
+Kepala sekolah dan superuser dapat menambah, melihat, mengubah, menonaktifkan dan ekspor rekening sesuai scope. 26 tes Django SQLite lulus. Rekening belum terhubung ke tagihan, belum ada snapshot tujuan, audit, impor dan pengujian PostgreSQL/RLS. Jangan gunakan data nyata.
