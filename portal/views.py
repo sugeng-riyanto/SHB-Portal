@@ -18,7 +18,7 @@ from django.http import HttpResponse, HttpResponseForbidden
 from .imports import ImportErrorDetail, preview_xlsx, template_bytes, MAX_BYTES
 
 def admin_only(user):
-    return Membership.objects.filter(user=user, role=Membership.Role.ADMIN, active=True).exists()
+    return bool(user.is_active and user.is_superuser) or Membership.objects.filter(user=user, role=Membership.Role.ADMIN, active=True).exists()
 
 @login_required
 def xlsx_template(request):
@@ -60,6 +60,9 @@ from .proofs import accessible_proofs, validate_image
 def proofs_list(request):
     proofs = list(accessible_proofs(request.user).select_related('invoice__enrollment__student')[:100])
     admin_schools = set(Membership.objects.filter(user=request.user, active=True, role=Membership.Role.ADMIN).values_list('school_id', flat=True))
+    if request.user.is_active and request.user.is_superuser:
+        from .models import School
+        admin_schools.update(School.objects.values_list('id', flat=True))
     for proof in proofs:
         proof.may_verify = proof.invoice.enrollment.student.school_id in admin_schools
     return render(request, 'portal/proofs.html', {'proofs': proofs})
@@ -105,7 +108,7 @@ def proof_verify(request, proof_id):
         proof = get_object_or_404(TransferProof.objects.select_for_update().select_related('invoice__enrollment__student', 'invoice__enrollment__classroom__year'),pk=proof_id)
         invoice = Invoice.objects.select_for_update().get(pk=proof.invoice_id)
         student = proof.invoice.enrollment.student
-        if not Membership.objects.filter(user=request.user,school=student.school,role=Membership.Role.ADMIN,active=True).exists() or proof.invoice.enrollment.classroom.year.school_id != student.school_id:
+        if not (request.user.is_active and request.user.is_superuser or Membership.objects.filter(user=request.user,school=student.school,role=Membership.Role.ADMIN,active=True).exists()) or proof.invoice.enrollment.classroom.year.school_id != student.school_id:
             raise Http404
         if proof.status != TransferProof.Status.PENDING or invoice.cancelled:
             return HttpResponseBadRequest('Bukti tidak dapat diverifikasi.')
@@ -118,3 +121,17 @@ def proof_verify(request, proof_id):
         proof.reviewed_at = timezone.now()
         proof.save(update_fields=['status','reviewed_by','reviewed_at'])
     return redirect('proofs_list')
+
+@login_required
+def integration_settings(request):
+    """Read-only configuration status; never return secret values."""
+    import os
+    if not request.user.is_active or not request.user.is_superuser:
+        raise Http404
+    groups = [
+        ('Supabase PostgreSQL', ('POSTGRES_HOST', 'POSTGRES_DB', 'POSTGRES_USER', 'POSTGRES_PASSWORD')),
+        ('Gmail SMTP', ('SMTP_HOST', 'SMTP_PORT', 'SMTP_USER', 'SMTP_PASSWORD')),
+        ('Midtrans', ('MIDTRANS_SERVER_KEY', 'MIDTRANS_CLIENT_KEY')),
+    ]
+    states = [{'name': name, 'configured': all(bool(os.environ.get(k)) for k in keys)} for name, keys in groups]
+    return render(request, 'portal/integrations.html', {'states': states})
