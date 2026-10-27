@@ -75,3 +75,6 @@ Default English dan pilihan English/Indonesia/Mandarin Tradisional pada bagian l
 
 ## Bukti transfer: edit dan tarik
 Wali pemilik dengan relasi aktif dapat mengubah nominal/tanggal/foto dan menarik bukti pending. Bukti diverifikasi tidak dapat diubah/ditarik; uji pemilik dan wali lain lulus di SQLite. Riwayat perubahan field/audit, validasi konkurensi PostgreSQL, storage terenkripsi, seluruh RBAC/CRUD dan terjemahan tetap belum lengkap.
+
+## Validasi XLSX tambahan
+Preview XLSX kini memeriksa format email, tanggal ISO dan referensi tagihan duplikat di dalam file. Uji khusus lulus; validasi belum memastikan kepemilikan email/kelas/bank, belum melakukan commit tagihan atau pengiriman massal. Pengujian 43 tes Django sebelumnya lulus pada SQLite; tidak membuktikan Supabase, SMTP nyata, maupun seluruh release gates.
