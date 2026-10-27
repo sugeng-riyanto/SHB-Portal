@@ -57,3 +57,6 @@ Templat pembayaran profesional ID/EN berbentuk HTML inline dan teks biasa disiap
 
 ## Proteksi produksi dan PDP
 Tambahkan profil SHB_ENV=production: wajib secret dan hosts eksplisit, DEBUG off, HTTPS redirect dan secure cookies; pengaturan trust proxy opt-in; HSTS opt-in setelah konfigurasi HTTPS teruji. Dokumen PRIVACY_PDP.md memetakan kebutuhan kebijakan dan kontrol yang belum ada. Jangan klaim kepatuhan atau gunakan data nyata sebelum validasi hukum, staging dan audit teknis.
+
+## Korespondensi awal
+Admin dapat mengirim pesan individual kepada wali dengan membership aktif pada sekolahnya; pesan tersimpan dalam inbox wali dan SMTP opsional mencatat status accepted/failed. Email default dinonaktifkan, konfigurasi SMTP via environment; tidak ada retry otomatis untuk kegagalan ambigu. 29 tes Django SQLite lulus termasuk outbox simulasi dan isolasi sekolah. Belum ada preview/konfirmasi kedua, bulk, pembatasan kecepatan, validasi email terverifikasi, antrian, audit, Supabase Auth/RLS, pelindungan operasional dan uji SMTP nyata. Belum siap data asli.
