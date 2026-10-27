@@ -1,8 +1,8 @@
 from datetime import date
 from django.contrib.auth import get_user_model
-from django.test import TestCase
+from django.test import TestCase, TransactionTestCase
 from django.urls import reverse
-from .models import School, Membership, AcademicYear, Classroom, Student, Enrollment, Invoice
+from .models import School, Membership, AcademicYear, Classroom, Student, Enrollment, Invoice, TransferProof, Payment
 
 class DashboardAccessTests(TestCase):
     def setUp(self):
@@ -18,7 +18,7 @@ class DashboardAccessTests(TestCase):
         self.student = Student.objects.create(school=self.school,nis='001',name='ANAK SATU')
         self.student.guardians.add(self.guardian)
         enrollment = Enrollment.objects.create(student=self.student,classroom=self.classroom)
-        Invoice.objects.create(enrollment=enrollment,reference='INV-1',description='SPP',amount=500000,due_date=date(2026,11,1))
+        self.invoice=Invoice.objects.create(enrollment=enrollment,reference='INV-1',description='SPP',amount=500000,due_date=date(2026,11,1))
         Membership.objects.create(user=self.guardian,school=self.school,role='guardian')
         Membership.objects.create(user=self.teacher,school=self.school,role='teacher')
         Membership.objects.create(user=self.other,school=self.other_school,role='admin')
@@ -122,7 +122,7 @@ class DashboardAccessTests(TestCase):
         from .models import TransferProof, Payment
         image=BytesIO();Image.new('RGB',(4,4),'white').save(image,format='PNG')
         self.client.force_login(self.guardian)
-        response=self.client.post('/invoices/1/proof/',{'amount':'200000','transfer_date':'2026-10-27','image':SimpleUploadedFile('proof.png',image.getvalue())})
+        response=self.client.post(f'/invoices/{self.invoice.pk}/proof/',{'amount':'200000','transfer_date':'2026-10-27','image':SimpleUploadedFile('proof.png',image.getvalue())})
         self.assertEqual(response.status_code,302)
         proof=TransferProof.objects.get()
         self.assertEqual(Payment.objects.count(),0)
@@ -144,7 +144,7 @@ class DashboardAccessTests(TestCase):
         from django.core.files.uploadedfile import SimpleUploadedFile
         from .models import TransferProof
         self.client.force_login(self.guardian)
-        response=self.client.post('/invoices/1/proof/',{'amount':'100','transfer_date':'2026-10-27','image':SimpleUploadedFile('fake.png',b'not an image')})
+        response=self.client.post(f'/invoices/{self.invoice.pk}/proof/',{'amount':'100','transfer_date':'2026-10-27','image':SimpleUploadedFile('fake.png',b'not an image')})
         self.assertContains(response,'Foto tidak valid')
         self.assertEqual(TransferProof.objects.count(),0)
 
@@ -271,3 +271,144 @@ class DashboardAccessTests(TestCase):
         self.assertEqual(Message.objects.get().email_status,'failed')
         self.client.force_login(self.teacher)
         self.assertEqual(self.client.get('/messages/compose/').status_code,404)
+
+class SeedDemoCommandTests(TestCase):
+    def seed(self, **kwargs):
+        from io import StringIO
+        from django.core.management import call_command
+        out=StringIO()
+        call_command('seed_demo',stdout=out,**kwargs)
+        return out.getvalue()
+    def test_seed_creates_scoped_preview_data_and_repeats_safely(self):
+        self.assertIn('objek baru dibuat',self.seed())
+        self.assertTrue(School.objects.filter(name='Sekolah Harapan Bangsa (contoh)').exists())
+        self.assertEqual(Student.objects.count(),3)
+        self.assertEqual(Invoice.objects.count(),3)
+        self.assertEqual(Membership.objects.count(),3)
+        self.assertEqual(Enrollment.objects.count(),3)
+        self.client.force_login(get_user_model().objects.get(username='ortu'))
+        dashboard=self.client.get('/dashboard/')
+        self.assertContains(dashboard,'Murid Contoh 1')
+        self.assertNotContains(dashboard,'Murid Contoh 3')
+        self.client.force_login(get_user_model().objects.get(username='admin'))
+        self.assertContains(self.client.get('/dashboard/'),'Murid Contoh 3')
+        self.assertIn('sudah lengkap',self.seed())
+        counts=(School.objects.count(),Student.objects.count(),Invoice.objects.count(),Membership.objects.count(),Enrollment.objects.count())
+        self.assertEqual(counts,(1,3,3,3,3))
+    def test_seed_uses_given_password(self):
+        self.seed(password='another-demo-password')
+        self.assertTrue(self.client.login(username='ortu',password='another-demo-password'))
+    def test_seed_refuses_production(self):
+        from io import StringIO
+        from django.core.management import call_command
+        from django.core.management.base import CommandError
+        with self.settings(PRODUCTION=True):
+            with self.assertRaises(CommandError):
+                call_command('seed_demo',stdout=StringIO())
+        self.assertFalse(School.objects.exists())
+
+class ConcurrentProofVerificationTests(TransactionTestCase):
+    """Verifikasi bukti bersamaan tidak boleh menghasilkan dua pembayaran.
+
+    Memakai TransactionTestCase agar data benar-benar ter-commit dan terlihat oleh
+    koneksi kedua. Kelas ini hanya berjalan pada PostgreSQL: SQLite mengunci seluruh
+    database dan mengabaikan SELECT ... FOR UPDATE, sehingga tidak bisa menguji dua
+    penulis bersamaan maupun perilaku menunggu lock.
+    """
+    def setUp(self):
+        from django.db import connection
+        if connection.vendor!='postgresql':
+            self.skipTest('Butuh row lock PostgreSQL; SQLite mengabaikan SELECT ... FOR UPDATE.')
+        User=get_user_model()
+        self.school=School.objects.create(name='SHB Concurrent')
+        year=AcademicYear.objects.create(school=self.school,label='2026/27')
+        classroom=Classroom.objects.create(year=year,name='9A')
+        guardian=User.objects.create_user(username='concurrent-guardian',password='long-test-password')
+        student=Student.objects.create(school=self.school,nis='900',name='ANAK KONKUREN')
+        student.guardians.add(guardian)
+        enrollment=Enrollment.objects.create(student=student,classroom=classroom)
+        self.invoice=Invoice.objects.create(enrollment=enrollment,reference='INV-CONCURRENT',description='SPP',amount=200000,due_date=date(2026,11,1))
+        self.admin=User.objects.create_user(username='concurrent-admin',password='long-test-password')
+        Membership.objects.create(user=self.admin,school=self.school,role='admin')
+        self.proof=TransferProof.objects.create(invoice=self.invoice,guardian=guardian,reported_amount=100000,transfer_date=date(2026,10,27),image=b'x',image_type='png')
+    def test_two_simultaneous_verifications_create_one_payment(self):
+        import threading
+        from django.db import connections
+        from django.test import Client
+        barrier=threading.Barrier(2)
+        codes=[];errors=[]
+        def verify():
+            try:
+                client=Client()
+                client.force_login(self.admin)
+                barrier.wait(timeout=15)
+                codes.append(client.post(f'/proofs/{self.proof.pk}/verify/').status_code)
+            except Exception as exc:
+                errors.append(exc)
+            finally:
+                connections.close_all()
+        threads=[threading.Thread(target=verify) for _ in range(2)]
+        for thread in threads: thread.start()
+        for thread in threads: thread.join(timeout=60)
+        self.assertEqual(errors,[])
+        self.assertEqual(sorted(codes),[302,400])
+        self.assertEqual(Payment.objects.count(),1)
+        self.proof.refresh_from_db()
+        self.assertEqual(self.proof.status,TransferProof.Status.VERIFIED)
+        self.assertEqual(self.proof.reviewed_by_id,self.admin.pk)
+    def test_second_verification_waits_for_the_locked_row(self):
+        """Verifikasi kedua benar-benar menunggu lock lalu melihat status ter-commit.
+
+        Transaksi pertama memegang lock baris (sama seperti select_for_update pada view)
+        dan menahannya sampai di-commit. Selama itu verifikasi kedua harus menunggu, bukan
+        lolos; setelah commit ia melihat status VERIFIED dan menolak (400).
+        """
+        import threading
+        import time
+        from django.db import connections, transaction
+        from django.test import Client
+        locked=threading.Event();release=threading.Event();order=[];errors=[]
+        def hold_row_lock_and_verify():
+            try:
+                with transaction.atomic():
+                    proof=TransferProof.objects.select_for_update().get(pk=self.proof.pk)
+                    locked.set()
+                    release.wait(timeout=20)
+                    Payment.objects.create(invoice=self.invoice,amount=proof.reported_amount,verified=True)
+                    proof.status=TransferProof.Status.VERIFIED
+                    proof.reviewed_by=self.admin
+                    proof.save(update_fields=['status','reviewed_by'])
+                    order.append('first-commit')
+            except Exception as exc:
+                errors.append(exc)
+            finally:
+                connections.close_all()
+        def second_verification():
+            try:
+                client=Client()
+                client.force_login(self.admin)
+                order.append(('second',client.post(f'/proofs/{self.proof.pk}/verify/').status_code))
+            except Exception as exc:
+                errors.append(exc)
+            finally:
+                connections.close_all()
+        holder=threading.Thread(target=hold_row_lock_and_verify)
+        holder.start()
+        self.assertTrue(locked.wait(timeout=20),'transaksi pertama gagal memegang lock baris')
+        second=threading.Thread(target=second_verification)
+        second.start()
+        time.sleep(0.5)
+        # Permintaan kedua harus tertahan selama transaksi pertama masih terbuka.
+        # Asersi penentu ada di bawah: tanpa select_for_update, verifikasi kedua tetap
+        # tertahan pada UPDATE namun tetap lolos (302) karena pemeriksaan status sudah
+        # dilakukan sebelum menunggu, sehingga muncul dua pembayaran.
+        self.assertEqual([item for item in order if isinstance(item,tuple)],[],
+                         'permintaan verifikasi kedua sudah selesai padahal transaksi pertama masih terbuka')
+        release.set()
+        holder.join(timeout=30);second.join(timeout=30)
+        self.assertEqual(errors,[])
+        self.assertEqual(order[0],'first-commit')
+        self.assertEqual(order[-1],('second',400))
+        self.assertEqual(Payment.objects.count(),1)
+        self.proof.refresh_from_db()
+        self.assertEqual(self.proof.status,TransferProof.Status.VERIFIED)

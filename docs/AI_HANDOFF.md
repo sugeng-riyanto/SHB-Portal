@@ -2,6 +2,8 @@
 
 Tanggal: 27 Oktober 2026. Status: spesifikasi awal saja; tidak ada repository, kode, pengujian atau deployment yang diverifikasi. Keputusan stack dan kebutuhan dirancang sesuai permintaan; detail operasional belum disetujui. Berikutnya: sepakati keputusan terbuka di DECISIONS; buat repo dan prototipe Auth, role/scope, migrasi dan impor; uji sebelum implementasi pengiriman.
 
+> Catatan: paragraf di atas adalah kondisi awal 27 Oktober 2026, sebelum ada kode. Bagian di bawah ditambahkan berurutan; kondisi kode, pengujian dan risiko terkini ada pada bagian **Uji PostgreSQL, konkurensi, dan data contoh — 27 Oktober 2026**. Belum ada rilis atau deployment produksi apa pun.
+
 Saat pekerjaan berjalan, catat branch, commit, status perubahan, keputusan, perintah & hasil tes, environment, risiko, blocker dan next action. Jangan masukkan rahasia atau data murid asli.
 
 ## Pembaruan 27 Oktober 2026
@@ -57,6 +59,37 @@ Templat pembayaran profesional ID/EN berbentuk HTML inline dan teks biasa disiap
 
 ## Proteksi produksi dan PDP
 Tambahkan profil SHB_ENV=production: wajib secret dan hosts eksplisit, DEBUG off, HTTPS redirect dan secure cookies; pengaturan trust proxy opt-in; HSTS opt-in setelah konfigurasi HTTPS teruji. Dokumen PRIVACY_PDP.md memetakan kebutuhan kebijakan dan kontrol yang belum ada. Jangan klaim kepatuhan atau gunakan data nyata sebelum validasi hukum, staging dan audit teknis.
+
+## Uji PostgreSQL, konkurensi, dan data contoh — 27 Oktober 2026
+Branch `freebuff/ac9ad268c61424b55ab6a2ea`, perubahan belum di-commit. Yang berubah: `portal/tests.py`, perintah baru `portal/management/commands/seed_demo.py`, `README.md`, dan dokumen ini. `config/settings.py`, `config/urls.py` dan `portal/views.py` tidak diubah. Semua data uji sintetis; tidak ada data murid nyata.
+
+### Lingkungan
+- Python 3.12.3 dengan venv `.venv` dari `requirements.txt`: Django 5.2.18, psycopg 3.2.13, openpyxl 3.1.5, Pillow 12.3.0. Django global 6.1 sengaja tidak dipakai agar sesuai pin proyek.
+- Preview lokal memakai SQLite `db.sqlite3` (gitignored), diisi dengan `python manage.py seed_demo`.
+- **PostgreSQL 16.2 dijalankan sebagai pengguna biasa**, karena image ini tanpa root (sudo diblokir `no-new-privileges`), tanpa daftar paket apt, dan binari EDB mengembalikan 403: `pip install pgserver` (menyertakan binari PostgreSQL) → `initdb -U shb -E UTF8 --auth=trust -D $HOME/shb-pgdata` → `pg_ctl -D $HOME/shb-pgdata -o "-p 55432 -c listen_addresses=127.0.0.1" -l $HOME/pg.log start`. Data dir 62 MB di luar repo; **lingkungan ini tidak persisten** dan harus dibuat ulang setelah restore.
+- `config/settings.py` tidak diubah: tes dijalankan dengan `POSTGRES_HOST=/tmp` (socket Unix) sehingga `OPTIONS={'sslmode': 'require'}` tetap ikut diuji.
+- Perintah: PostgreSQL `POSTGRES_HOST=/tmp POSTGRES_PORT=55432 POSTGRES_DB=shb POSTGRES_USER=shb POSTGRES_PASSWORD=<kata-sandi-lokal> .venv/bin/python manage.py test portal`; SQLite tanpa variabel `POSTGRES_*`; domain `PYTHONPATH=src .venv/bin/python -m unittest discover -s tests`.
+
+### Hasil uji
+| Perintah | PostgreSQL 16.2 | SQLite |
+|---|---|---|
+| `manage.py test portal` | 34 lulus | 34 lulus, 2 skip |
+| `unittest discover -s tests` | 5 lulus | 5 lulus |
+
+Tiga perubahan yang diuji:
+1. **`seed_demo`** — data contoh sintetis idempotent (satu sekolah, tiga akun admin/walikelas/ortu, dua kelas, tiga murid, tiga tagihan, satu rekening) agar preview bisa dibangun ulang setelah restore; hanya menambah bagian yang hilang, menolak berjalan saat `SHB_ENV=production`, dan kata sandinya hanya demo. Tiga tes baru termasuk penolakan produksi dan isolasi scope wali.
+2. **Perbaikan tes:** `test_guardian_upload_and_cross_family_privacy` dan `test_invalid_photo_rejected` memakai URL keras `/invoices/1/proof/`. Urutan `serial` PostgreSQL tidak ikut rollback saat transaksi tes dibatalkan, sehingga `pk=1` hanya valid pada SQLite; setelah tes lain membuat tagihan, id tersebut tidak ada dan hasilnya 404. Terbukti dengan menjalankan tes itu sendirian (lulus) dan setelah tes pembuat tagihan (gagal). Perbaikan: simpan `self.invoice` di `setUp` dan pakai `self.invoice.pk`; asersi tidak diubah.
+3. **`ConcurrentProofVerificationTests`** (dua tes, hanya PostgreSQL) — TransactionTestCase agar data ter-commit dan terlihat koneksi kedua. (a) Dua POST `/proofs/<id>/verify/` bersamaan dari dua thread dengan `Barrier`, `Client` dan koneksi terpisah; menuntut tepat satu 302, satu 400, satu Payment, status VERIFIED dan `reviewed_by` admin. (b) Tes deterministik: satu transaksi memegang lock baris dengan `select_for_update` dan menahan commit; selama itu permintaan verifikasi kedua harus tertahan, lalu setelah commit melihat status VERIFIED dan ditolak 400, dengan tepat satu Payment. Bukti keduanya tidak hampa: saat `select_for_update()` dihapus sementara, keduanya gagal ([302,302] dan verifikasi kedua 302). Catatan penting yang terungkap: tanpa lock, verifikasi kedua tetap tertahan pada `UPDATE` tetapi tetap lolos, karena pemeriksaan status sudah dilakukan sebelum menunggu — itulah race yang dicegah. `portal/views.py` dipulihkan identik dengan HEAD. Pada SQLite keduanya di-skip dengan alasan tercatat (`SELECT ... FOR UPDATE` diabaikan).
+
+### Risiko dan keterbatasan yang tersisa
+- **TLS TCP belum teruji.** Binari PostgreSQL ini dikompilasi tanpa SSL (`SSL is not supported by this build`), dan pada socket Unix tidak ada TLS yang dinegosiasikan, sehingga jalur produksi Supabase dengan `sslmode=require` over TCP masih belum diverifikasi.
+- **Konkurensi baru diuji dengan dua penulis.** Urutan menunggu lock dan single-payment sudah dibuktikan deterministik, tetapi lebih dari dua penulis paralel, jalur penolakan bukti saat bersamaan, serta deadlock/timeout kunci belum diuji.
+- **RLS dan migrasi Supabase belum diuji**, termasuk `deploy/supabase_hardening.sql`. Pemeriksaan akses yang terbukti baru pada tingkat aplikasi Django.
+- **Versi mesin berbeda:** pengujian memakai PostgreSQL 16.2; Supabase dapat memakai major version lain sehingga perilaku spesifik versi masih perlu dikonfirmasi.
+- **Skip pada SQLite** untuk tes konkurensi bukan bukti lulus; invarian itu hanya terbukti pada PostgreSQL.
+- **Lingkungan pengujian tidak persisten** dan perubahan belum di-commit, jadi hasil ini tidak dapat diulang tanpa menjalankan ulang langkah di atas.
+
+Berikutnya: pindahkan pengujian ke instance PostgreSQL/Supabase terisolasi dengan TLS nyata, tambah pengujian konkurensi di atas dua penulis, dan pertimbangkan opsi reset terkontrol pada `seed_demo`.
 
 ## Korespondensi awal
 Admin dapat mengirim pesan individual kepada wali dengan membership aktif pada sekolahnya; pesan tersimpan dalam inbox wali dan SMTP opsional mencatat status accepted/failed. Email default dinonaktifkan, konfigurasi SMTP via environment; tidak ada retry otomatis untuk kegagalan ambigu. 29 tes Django SQLite lulus termasuk outbox simulasi dan isolasi sekolah. Belum ada preview/konfirmasi kedua, bulk, pembatasan kecepatan, validasi email terverifikasi, antrian, audit, Supabase Auth/RLS, pelindungan operasional dan uji SMTP nyata. Belum siap data asli.

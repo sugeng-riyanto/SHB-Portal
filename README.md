@@ -43,6 +43,7 @@ Kemudian:
 python -m pip install -r requirements.txt
 python manage.py migrate
 python manage.py createsuperuser
+python manage.py seed_demo   # opsional: data contoh sintetis untuk preview
 python manage.py runserver
 ```
 
