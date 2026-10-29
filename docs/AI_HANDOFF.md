@@ -398,3 +398,19 @@ Step `Upload PostgreSQL logs on failure` **skipped** — itu justru bukti step t
 **Risiko.** Action dipin ke tag major, bukan SHA commit; tidak ada job lint, `collectstatic`, maupun coverage; 5 tes domain tidak punya job sendiri; ketersediaan wheel `pgserver` untuk image runner bisa berubah tanpa peringatan; PR belum di-merge sehingga perilaku workflow pada `main` belum terbukti.
 
 **Tugas berikutnya.** Jalankan workflow pada `main` setelah merge, pin action ke SHA, tambahkan job untuk 5 tes domain dan lint, lalu tinjau ulang setelah kredensial staging tersedia.
+
+## Revert sempit: XLSX dan lupa password saja — 29 Oktober 2026
+Revert total ke `5dce8df` (PR #5) dipersempit atas keputusan pemilik: **yang dibatalkan hanya dua bagian**, sisanya dipertahankan. Branch `freebuff/sempit-xlsx-dan-reset` dibuat dari `main` `26f3dda`, dengan dua commit terpisah agar tiap bagian bisa dipilih/dibuang sendiri:
+
+1. `3eaf0c6` **Revert the student XLSX import hardening** — `portal/students.py` kembali ke bentuk `5dce8df` (−54/+10); batas baris/kolom tambahan, kunci NIS ternormalisasi Unicode dan pemeriksaan karakter kontrol hilang, bersama `StudentImportValidationTests` (6 tes). Konsekuensi: baris yang dulu ditangkap probe pratinjau kembali lolos.
+2. `7615e86` **Revert the password reset flow** — `portal/account.py`, empat rute di `config/urls.py`, tautan di `login.html` dan enam template `registration/password_reset_*` kembali ke `5dce8df`; `PasswordResetFlowTests` (6 tes) beserta `_ExplodingEmailBackend` dibuang. Konsekuensi: rute reset hilang, pemulihan password kembali manual oleh super admin.
+
+**Dipertahankan** (tidak dibatalkan): jembatan POST multipart chunked di `config/asgi.py` beserta `AsgiChunkedMultipartTests` — sehingga 403 "CSRF token missing" pada proxy preview tidak kembali; pola `.gitignore` untuk `.env.*`, `!.env.example`, `.secrets/` dan `.freebuff/`; serta seluruh catatan handoff PR #3 dan run CI `40602301205`. Total delta terhadap `main`: 11 berkas, +14/−307.
+
+Lingkungan dan tes: `python3 -m venv .venv` lalu `pip install -r requirements.txt` (Django 5.2.18) pada runner ini; `manage.py check` bersih; `manage.py test portal` pada SQLite **79 tes OK (skipped=2)** dalam 93,8 detik — turun dari 91 karena 12 tes milik dua kelas yang dibatalkan ikut dihapus, bukan karena tes lain dimatikan. Verifikasi tambahan: berkas `portal/tests.py` di head dibandingkan byte-per-byte (`cmp`) dengan salinan yang lulus, sama; kelas yang tersisa hanya `DashboardAccessTests`, `SeedDemoCommandTests`, `ConcurrentProofVerificationTests`, `AsgiChunkedMultipartTests`. Suite PostgreSQL tidak dijalankan lokal pada turn ini; cakupan PostgreSQL diserahkan ke job CI.
+
+Kesalahan proses yang terjadi dua kali dan cara mendeteksinya, agar tidak terulang: skrip penghapus kelas menghitung rentang baris dari AST sekali lalu menulis ulang teks di dalam loop sehingga indeks bergeser (percobaan pertama menghasilkan berkas yang tidak identik dengan yang lulus), dan pemulihan `portal/tests.py` sempat diambil dari `26f3dda` sehingga kelas tes XLSX yang sudah dibuang ikut masuk lagi (85 tes, 4 gagal). Keduanya tertangkap karena head dibandingkan dengan `cmp` terhadap salinan yang lulus, bukan karena suite "terlihat hijau". Sumber yang benar untuk langkah kedua adalah `3eaf0c6`.
+
+Risiko: (1) impor XLSX kembali permisif dan alur reset password hilang sampai fitur itu diperkenalkan ulang; (2) PR #5 (revert total) ditutup sebagai digantikan, tetapi branch-nya tetap ada sehingga revert total masih bisa dihidupkan kembali; (3) `main` masih tanpa proteksi branch; (4) preview yang di-restart pada tree ini tetap bisa POST multipart (403 tidak kembali), tetapi tautan "Lupa password?" tidak lagi tampil.
+
+Berikutnya: putuskan merge PR sempit ini; bila salah satu bagian ternyata masih dibutuhkan, buang commit terkait (revert per commit, bukan per berkas) lalu push ulang; setelah `main` berubah, jalankan verifikasi preview per peran.
