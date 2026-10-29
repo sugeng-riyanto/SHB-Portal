@@ -1,15 +1,10 @@
-import logging
-
 from django import forms
 from django.contrib.auth import update_session_auth_hash
 from django.contrib.auth.decorators import login_required
 from django.contrib.auth.forms import PasswordChangeForm
-from django.contrib.auth.views import LoginView, PasswordResetView
-from django.http import Http404, HttpResponse, HttpResponseRedirect
+from django.contrib.auth.views import LoginView
+from django.http import Http404, HttpResponse
 from django.shortcuts import redirect, render
-from django.urls import reverse_lazy
-from django.utils.decorators import method_decorator
-from django.views.decorators.debug import sensitive_post_parameters
 from .models import UserProfile
 from .proofs import validate_image
 
@@ -65,26 +60,3 @@ def change_password(request):
         profile.must_change_password=False;profile.save(update_fields=['must_change_password'])
         return redirect('dashboard')
     return render(request,'portal/change_password.html',{'form':form})
-
-@method_decorator(sensitive_post_parameters('email'),name='dispatch')
-class PortalPasswordResetView(PasswordResetView):
-    """Send a single-use reset link to the registered address.
-
-    Nothing about the account is disclosed: the same "request received" page is
-    returned for an unknown address, and the email never contains a password.
-    A mail server that is unreachable (the default in this environment, where
-    email is disabled) must not produce a 500, so the failure is logged without
-    any account detail and the same non-disclosing response is returned.
-    """
-    template_name='registration/password_reset_form.html'
-    email_template_name='registration/password_reset_email.txt'
-    subject_template_name='registration/password_reset_subject.txt'
-    success_url=reverse_lazy('password_reset_done')
-
-    def form_valid(self,form):
-        try:
-            return super().form_valid(form)
-        except Exception:
-            logging.getLogger('shb.security').warning(
-                'Password reset email delivery failed; no account detail is logged.')
-            return HttpResponseRedirect(self.get_success_url())
