@@ -398,3 +398,16 @@ Step `Upload PostgreSQL logs on failure` **skipped** — itu justru bukti step t
 **Risiko.** Action dipin ke tag major, bukan SHA commit; tidak ada job lint, `collectstatic`, maupun coverage; 5 tes domain tidak punya job sendiri; ketersediaan wheel `pgserver` untuk image runner bisa berubah tanpa peringatan; PR belum di-merge sehingga perilaku workflow pada `main` belum terbukti.
 
 **Tugas berikutnya.** Jalankan workflow pada `main` setelah merge, pin action ke SHA, tambahkan job untuk 5 tes domain dan lint, lalu tinjau ulang setelah kredensial staging tersedia.
+
+## Keputusan: `main` dipertahankan di `26f3dda` — 29 Oktober 2026
+Diputuskan `main` tidak dikembalikan ke `5dce8df`. PR #5 (revert total ke `5dce8df`) ditutup tanpa merge; commit `1d5c0e2`, `6f8eb48`, `cee2e29` beserta catatan handoff yang menyertainya tetap ada di branch `freebuff/revert-main-to-5dce8df` sebagai arsip, tetapi bukan bagian dari `main`. Tidak ada penulisan ulang riwayat dan tidak ada force push; `origin/main` tetap `26f3dda` sebelum maupun sesudah perubahan dokumentasi ini.
+
+Isi `main` karena itu tetap seperti setelah `26f3dda`: jembatan POST multipart chunked di `config/asgi.py` aktif sehingga 403 "CSRF token missing" pada proxy preview tidak kembali; alur lupa password tersedia (rute `/accounts/password-reset/` dan tautannya di halaman login); hardening impor XLSX murid masih berlaku; pola `.gitignore` untuk `.env`, `.env.*`, `.secrets/` dan `.freebuff/` masih terpasang; catatan PR #3 dan run CI `40602301205` tetap ada.
+
+Yang masih terbuka dan menentukan keberlakuan paragraf di atas: PR #6 (branch `freebuff/sempit-xlsx-dan-reset`, commit `3eaf0c6`, `7615e86`, `f5616d7`) membatalkan hanya hardening impor XLSX dan alur lupa password, dengan CI hijau **79 tes** pada job SQLite maupun PostgreSQL. Bila PR itu di-merge, `main` berubah dari `26f3dda` dan bagian ini tidak lagi menggambarkan `main`; bila ditutup, tidak ada revert yang tersisa dan `main` tetap sebagaimana dideskripsikan di atas.
+
+Lingkungan dan tes: perubahan ini hanya dokumentasi — tidak ada kode, migrasi, atau tes yang diubah, jadi suite tidak dijalankan ulang untuk commit ini; bukti terakhir untuk kode `main` adalah run CI pada `26f3dda` dan suite 91 tes yang tercatat di bagian sebelumnya. Yang diverifikasi pada turn ini hanya keadaan repositori: PR #5 berstatus `CLOSED` tanpa merge, PR #6 `OPEN` dengan `mergeable=MERGEABLE`, dan `origin/main` masih `26f3dda`.
+
+Risiko: (1) `main` tetap tanpa proteksi branch (API menjawab 404 "Branch not protected"), sehingga push langsung masih mungkin dan gerbang review tetap konvensi; (2) PR #4 dan PR #6 sama-sama mengubah berkas ini sehingga berkonflik dan urutan merge menentukan penyelesaiannya; (3) verifikasi preview per peran belum dijalankan ulang pada tree `26f3dda` setelah keputusan ini, jadi status 403 hanya bersandar pada `AsgiChunkedMultipartTests` dan run CI sebelumnya, bukan pada percobaan browser.
+
+Berikutnya: tentukan nasib PR #6 (merge atau tutup); bila ditutup, arsipkan branch revert agar tidak ada revert yang menggantung; lalu pertimbangkan proteksi `main` seperti diusulkan sebelumnya; dan jalankan verifikasi preview per peran pada tree `main` yang sekarang.
