@@ -414,3 +414,17 @@ Kesalahan proses yang terjadi dua kali dan cara mendeteksinya, agar tidak terula
 Risiko: (1) impor XLSX kembali permisif dan alur reset password hilang sampai fitur itu diperkenalkan ulang; (2) PR #5 (revert total) ditutup sebagai digantikan, tetapi branch-nya tetap ada sehingga revert total masih bisa dihidupkan kembali; (3) `main` masih tanpa proteksi branch; (4) preview yang di-restart pada tree ini tetap bisa POST multipart (403 tidak kembali), tetapi tautan "Lupa password?" tidak lagi tampil.
 
 Berikutnya: putuskan merge PR sempit ini; bila salah satu bagian ternyata masih dibutuhkan, buang commit terkait (revert per commit, bukan per berkas) lalu push ulang; setelah `main` berubah, jalankan verifikasi preview per peran.
+
+## Koreksi: `main` tidak lagi di `26f3dda` — 29 Oktober 2026
+Bagian sebelumnya ("Keputusan: `main` dipertahankan di `26f3dda`") **tidak berlaku lagi** dan sengaja dibiarkan tampil agar keputusan yang berubah tidak disamarkan. Atas keputusan pemilik, PR #6 di-merge ke `main` sebagai merge commit `9bc29a0`, sehingga `main` kini bukan `26f3dda`. Yang dipilih adalah revert sempit (#6), bukan revert total (#5): hanya hardening impor XLSX dan alur lupa password yang dibatalkan, sedangkan perbaikan 403 chunked dipertahankan. PR #5 tetap ditutup dan tidak di-merge.
+
+Yang berubah pada `main` (`26f3dda` → `9bc29a0`; 11 berkas, +14/−307):
+- `portal/students.py` kembali ke bentuk `5dce8df`: batas baris/kolom tambahan, kunci NIS ternormalisasi Unicode dan pemeriksaan karakter kontrol hilang, dan `StudentImportValidationTests` (6 tes) dihapus. Baris yang dulu ditangkap probe kembali lolos.
+- Alur lupa password hilang: `PortalPasswordResetView`, empat rute `/accounts/password-reset/*`, enam template `registration/password_reset_*`, dan `PasswordResetFlowTests` (6 tes). Tautan "Lupa password?" tidak lagi tampil di halaman login.
+- Tetap ada: jembatan POST multipart chunked (`config/asgi.py` beserta `AsgiChunkedMultipartTests`), pola `.gitignore` untuk `.env.*`/`.secrets/`/`.freebuff/`, dan catatan PR #3 beserta run CI `40602301205`.
+
+Verifikasi: CI pada `9bc29a0` ([run 40973571190](https://github.com/sugeng-riyanto/SHB-Portal/actions/runs/40973571190)) **success**; job SQLite `Ran 79 tests in 91.593s`, job PostgreSQL `Ran 79 tests in 78.648s`. Angka 79 berasal dari 91 dikurangi 12 tes milik dua kelas yang dibatalkan. Preview di worktree dijalankan ulang pada kode `main` ini: halaman login 200 tanpa tautan reset, `/accounts/password-reset/` 404, POST login tetap 302 sehingga jembatan chunked terbukti masih bekerja, dan log server tanpa traceback.
+
+Risiko: impor XLSX kembali permisif dan pemulihan password kembali manual sampai fitur diperkenalkan ulang; tanpa proteksi branch, `main` masih bisa diubah langsung; PR #4 dan PR #7 berpotensi berkonflik pada berkas ini karena keduanya menambah bagian di ujung yang sama.
+
+Berikutnya: perkenalkan ulang hardening XLSX dengan tes yang menolak data tidak sah tanpa menolak data sah, dan putuskan apakah alur reset password dikembalikan atau tetap manual.
