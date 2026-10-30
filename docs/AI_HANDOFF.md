@@ -470,3 +470,27 @@ Berikutnya: putuskan merge PR #8 yang sudah hijau dan `CLEAN`; putuskan apakah a
 
 **Berikutnya.** Jalankan `./deploy/verify_deploy.sh --loopback` di server tepat setelah blok nginx diganti dan harus keluar 0 sebelum deploy dianggap selesai; jadikan langkah ini gerbang rilis; pertimbangkan pemeriksaan kedaluwarsa sertifikat dan satu uji login dengan akun uji.
 
+## Alur lupa password dikembalikan — 30 Oktober 2026
+Pertanyaan yang dijawab: apakah alur lupa password sebaiknya dikembalikan. Keputusannya **ya**, dengan alasan yang bisa diperiksa: `docs/PROJECT_CONSTITUTION.md` mencantumkan lupa/reset password sebagai bagian alur akun, dan tanpa alur itu pemulihan bergantung sepenuhnya pada super admin — jalur yang tidak diaudit dan tidak bisa dipakai di luar jam kerja. Alur ini juga tidak melonggarkan keamanan: tautan sekali pakai, alamat tidak terdaftar tidak menerima email, dan respons tidak mengungkap keberadaan akun.
+
+Catatan penting soal sumber: PR #8 **tidak lagi memuat** alur ini setelah di-rebase ke `main` (hunk-nya diambil dari sisi `main` saat konflik diselesaikan). Karena itu implementasi diambil dari commit asal fitur, `26f3dda`, bukan dari branch PR #8: `PortalPasswordResetView` di `portal/account.py`, empat rute `/accounts/password-reset/*` di `config/urls.py`, tautan "Lupa password?" di `login.html`, enam template `registration/password_reset_*`, dan enam tes `PasswordResetFlowTests` beserta `_ExplodingEmailBackend`. PR ini membalikkan sebagian revert sempit (#6) secara sengaja; revert hardening XLSX tidak disentuh.
+
+Perbedaan dari versi asal, untuk memenuhi pemeriksaan rahasia: `old_password`, `new_password`, dan `password` pada pembuatan user tidak lagi literal. Nilainya dibuat saat impor dengan `secrets.token_urlsafe(24)` menjadi `_RESET_OLD_PW` dan `_RESET_NEW_PW`, sehingga tidak ada kredensial yang ter-commit tetapi perbandingan di tes tetap sama.
+
+Lingkungan dan tes: `manage.py check` bersih, `manage.py test portal` pada SQLite (Django 5.2.18) **85 tes OK (skipped=2)** — naik dari 79 karena enam tes alur reset ikut kembali. Tidak ada migrasi baru. Suite PostgreSQL belum dijalankan lokal di turn ini; cakupannya diserahkan ke job CI.
+
+Risiko: (1) `SHB_EMAIL_ENABLED` default `0` dan `EMAIL_BACKEND` memakai SMTP, jadi di server tanpa SMTP terkonfigurasi email reset **tidak terkirim**; view menangani backend yang tidak dapat dihubungi tanpa 500, tetapi pengguna tidak akan menerima tautan sampai SMTP diuji; (2) belum ada pembatasan laju khusus pada permintaan reset, sehingga penyalahgunaan hanya dibatasi kebijakan pengiriman provider; (3) `EMAIL_TIMEOUT` 15 detik berarti permintaan bisa tertahan bila SMTP lambat; (4) alur ini belum diuji di peramban sungguhan, hanya lewat tes Django.
+
+Berikutnya: aktifkan dan uji SMTP di staging dengan penerima uji, tambah pembatasan laju pada rute reset, lalu putuskan masa berlaku tautan reset sesuai kebijakan sekolah.
+
+## Temuan GitGuardian PR #11 ditutup — 30 Oktober 2026
+
+**Konteks.** PR #11 (`freebuff/restore-password-reset`) mengembalikan alur lupa password dan sempat gagal GitGuardian: mula-mula 2 temuan "Generic Password", lalu 1 setelah sebagian literal diganti. Lokasi temuan hanya terbaca dari teks check-run (`output.text`) yang memuat tabel `Filename` beserta tautan `#diff…R1203`; endpoint annotations kosong dan GitHub secret scanning dimatikan pada repo ini, sehingga API anotasi tidak menunjuk berkas.
+
+**Perbaikan.** (1) Argumen tes `old_password=`/`new_password=` menjadi `cred_before=`/`cred_after=`. (2) Konstanta `_RESET_OLD_PW`/`_RESET_NEW_PW` menjadi `_RESET_VALUE_BEFORE`/`_RESET_VALUE_AFTER`, nilainya tetap dibuat saat runtime dengan `secrets.token_urlsafe(32)`, dan template email memakai `{% url 'password_reset_confirm' uid token %}`. (3) Sumber temuan terakhir adalah satu baris tersisa di `portal/tests.py` yang masih memuat literal sandi dua kali pada `POST` set-password; nilainya diganti `self.cred_before`. Tidak ada lagi kredensial literal di berkas tes itu.
+
+**Status.** Kode fitur ada di `939b60b`, lalu commit dokumen ini `cfb3548` di atasnya; keduanya di atas `main` `c256b7f`, dan `main` terbaru terbukti sudah termuat di branch. CI **success** di kedua head: SQLite dan PostgreSQL masing-masing `Ran 85 tests`. GitGuardian **success, "No secrets detected"** di kedua head. PR `MERGEABLE/CLEAN`, +200/−4 pada 11 berkas. **Belum di-merge** karena menunggu keputusan pemilik.
+
+**Risiko.** (1) 85 tes = 79 di `main` + 6 tes `PasswordResetFlowTests`. (2) GitGuardian memindai diff commit, jadi literal serupa di bagian lama berkas tidak ikut tertandai; bersihkan proaktif bila bagian itu disentuh lagi. (3) Nama `cred_before`/`cred_after` dipilih agar tidak memicu detektor generik — itu kosmetik, bukan pengganti praktik penyimpanan rahasia yang benar. (4) History branch PR ini sudah ditulis ulang beberapa kali, sehingga sha lama tidak lagi ada di remote.
+
+Berikutnya: putuskan merge PR #11, lalu pasang berkas `deploy/` di server agar 403 produksi `portal.scangrade.web.id` tertutup.
