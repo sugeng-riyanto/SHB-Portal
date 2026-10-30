@@ -60,6 +60,12 @@ class Invoice(models.Model):
     fine = models.PositiveBigIntegerField(default=0)
     due_date = models.DateField()
     virtual_account = models.CharField(max_length=64, blank=True)
+    imported_type = models.CharField(max_length=100, blank=True)
+    imported_period = models.CharField(max_length=100, blank=True)
+    payment_account = models.ForeignKey('BankAccount', on_delete=models.PROTECT, null=True, blank=True)
+    payment_bank_name = models.CharField(max_length=100, blank=True)
+    payment_account_name = models.CharField(max_length=200, blank=True)
+    payment_account_number = models.CharField(max_length=64, blank=True)
     cancelled = models.BooleanField(default=False)
     class Meta:
         constraints = [models.CheckConstraint(condition=Q(amount__gte=0,fine__gte=0), name='invoice_nonnegative')]
@@ -104,12 +110,22 @@ class Message(models.Model):
         PENDING='pending','Menunggu'
         SENT='sent','Diterima server email'
         FAILED='failed','Gagal'
+        NOT_REQUESTED='none','Tidak diminta'
+        SENDING='sending','Sedang diproses'
+        UNKNOWN='unknown','Perlu diperiksa'
     school = models.ForeignKey(School, on_delete=models.PROTECT)
     sender = models.ForeignKey(settings.AUTH_USER_MODEL,on_delete=models.PROTECT,related_name='sent_portal_messages')
     recipient = models.ForeignKey(settings.AUTH_USER_MODEL,on_delete=models.PROTECT,related_name='received_portal_messages')
     subject = models.CharField(max_length=160)
     body = models.TextField(max_length=5000)
     email_status = models.CharField(max_length=10,choices=Delivery.choices,default=Delivery.PENDING)
+    email_destination = models.EmailField(max_length=254, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+class MessageBatch(models.Model):
+    token_hash = models.CharField(max_length=64, unique=True)
+    school = models.ForeignKey(School, on_delete=models.PROTECT)
+    sender = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT)
     created_at = models.DateTimeField(auto_now_add=True)
 
 class UserProfile(models.Model):

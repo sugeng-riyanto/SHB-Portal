@@ -190,6 +190,7 @@ X_FRAME_OPTIONS = 'DENY'
 
 # Email disabled unless explicitly enabled; no secrets stored in source.
 SHB_EMAIL_ENABLED = os.environ.get('SHB_EMAIL_ENABLED', '0') == '1'
+SHB_EMAIL_TEST_RECIPIENTS = [address.strip() for address in os.environ.get('SHB_EMAIL_TEST_RECIPIENTS', '').split(',') if address.strip()]
 EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
 EMAIL_HOST = os.environ.get('SMTP_HOST', 'localhost')
 EMAIL_PORT = int(os.environ.get('SMTP_PORT', '587'))
