@@ -456,3 +456,17 @@ Tiga hal dicatat pada turn ini karena ketiganya mengubah cara kerja repositori, 
 Risiko yang perlu diingat: (1) history branch PR #8 ditulis ulang — commit asli `4fbd236` hilang dari remote, isinya tetap ada di `1e142c1`; ini tidak terhindarkan karena GitGuardian memindai commit, bukan hanya keadaan akhir; (2) PR #8 sempat `BLOCKED` karena dua job Django pada run `41064793988` lama berstatus `in_progress` tanpa runner tertaut, lalu akhirnya berjalan dan lulus (79 tes per job) sehingga PR kini `MERGEABLE/CLEAN` dan tinggal menunggu keputusan merge; (3) alur lupa password tetap tidak ada di `main` sampai diputuskan dikembalikan; (4) `main` tanpa jalur push langsung berarti perbaikan darurat butuh mematikan proteksi sementara; (5) vhost produksi `portal.scangrade.web.id` masih menjawab 403 dari nginx dan perbaikannya menunggu PR #9 dipasang di server.
 
 Berikutnya: putuskan merge PR #8 yang sudah hijau dan `CLEAN`; putuskan apakah alur lupa password dikembalikan lewat PR terpisah; pasang artefak deploy dari PR #9 di server setelah `deploy/diagnose_403.sh` dikonfirmasi; dan untuk perubahan berikutnya, buat branch baru di atas `main` terbaru karena push langsung sudah tertutup.
+
+## Skrip verifikasi pasca-deploy — 30 Oktober 2026
+**Masalah yang dijawab.** Portal masih 403 setelah artefak `deploy/` masuk `main`. Pemeriksaan status saja menyesatkan: nginx menjawab setiap path, jadi deploy tampak terpasang padahal tidak ada permintaan yang sampai ke Django. Yang membedakan sehat dan rusak bukan kode status, melainkan siapa yang menjawab.
+
+**Yang ditambahkan.** `deploy/verify_deploy.sh` (156 baris, bash + curl) dengan sepuluh pemeriksaan: port 80 wajib 301/308 ke `https://`; port 443 wajib 200; badan bukan halaman galat nginx; header `Server` bukan nginx; badan memuat penanda aplikasi; `/accounts/login/` 200 dan memuat `csrfmiddlewaretoken`; `/static/portal/app.css` 200 dengan Content-Type CSS; `/dashboard/` tanpa sesi mengalihkan ke login. Keluar 0 lulus, 1 gagal, 2 argumen salah; setiap pola kegagalan dipetakan ke sebab yang mungkin. Pemakaian dicatat di `deploy/README.md`.
+
+**Lingkungan uji.** VM Linux cloud, `curl` 8.x, aplikasi lokal Django 5.2.18 lewat `runserver` (daphne). Produksi diuji dari luar tanpa kredensial apa pun; tidak ada perubahan pada server.
+
+**Bukti.** (1) Produksi `portal.scangrade.web.id` saat ini: **0 dari 10 lulus**, exit 1 — port 80 → 404, 443 → 403 berbadan 162 byte, `Server: nginx/1.18.0 (Ubuntu)`; skrip menunjuk blok port 80 yang belum dimuat dan blok lama yang masih menolak. (2) Aplikasi sehat (`--https-url http://127.0.0.1:3000 --skip-redirect`): **9 dari 9 lulus**, exit 0, termasuk `Server: daphne` dan token CSRF. (3) Negatif terkendali, server statis biasa: **3 dari 9**, exit 1 — menangkap "200 tetapi bukan aplikasi", kasus yang tidak terdeteksi bila hanya memeriksa kode status.
+
+**Risiko.** Skrip butuh `curl` dan `grep`; ia mengasumsikan kebijakan 80 → HTTPS, sehingga deploy yang sengaja melayani HTTP harus memakai `--skip-redirect`; pemeriksaan `--loopback` hanya bermakna bila dijalankan di server; alur ber-login (login, reset, unggah) tidak diuji; masa berlaku sertifikat tidak diperiksa.
+
+**Berikutnya.** Jalankan `./deploy/verify_deploy.sh --loopback` di server tepat setelah blok nginx diganti dan harus keluar 0 sebelum deploy dianggap selesai; jadikan langkah ini gerbang rilis; pertimbangkan pemeriksaan kedaluwarsa sertifikat dan satu uji login dengan akun uji.
+
