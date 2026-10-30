@@ -97,3 +97,13 @@ renewal ACME bekerja.
 Konfigurasi ini belum diuji dengan `nginx -t` di mesin nyata dari sesi ini:
 VM kerja tidak menjalankan nginx dan tidak punya akses ke server
 `103.93.133.193`. Validasi wajib dilakukan di server sebelum reload.
+
+## Verifikasi setelah memasang konfigurasi
+
+```bash
+./deploy/verify_deploy.sh            # dari mesin mana pun
+./deploy/verify_deploy.sh --loopback # dari server, sekalian uji 127.0.0.1
+```
+
+Skrip ini gagal (exit 1) bila port 80 tidak mengalihkan ke HTTPS, atau bila port 443 masih
+menjawab halaman galat nginx alih-alih aplikasi, dan mencetak petunjuk sesuai pola kegagalan.
