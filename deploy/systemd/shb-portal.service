@@ -1,0 +1,33 @@
+# /etc/systemd/system/shb-portal.service
+#
+# Menjalankan SHB Portal dengan gunicorn di 127.0.0.1:8001, di belakang nginx.
+# Rahasia dibaca dari /etc/shb-portal.env (mode 600, milik root) — jangan
+# menaruh nilainya di unit ini maupun di repositori.
+#
+#   systemctl daemon-reload
+#   systemctl enable --now shb-portal
+#   systemctl status shb-portal --no-pager
+
+[Unit]
+Description=SHB Portal (Django) on gunicorn
+After=network.target
+
+[Service]
+Type=simple
+User=www-data
+Group=www-data
+WorkingDirectory=/srv/shb-portal
+EnvironmentFile=/etc/shb-portal.env
+ExecStart=/srv/shb-portal/.venv/bin/gunicorn config.wsgi:application \
+    --bind 127.0.0.1:8001 \
+    --workers 3 \
+    --timeout 60 \
+    --access-logfile - \
+    --error-logfile -
+Restart=always
+RestartSec=3
+PrivateTmp=true
+NoNewPrivileges=true
+
+[Install]
+WantedBy=multi-user.target
