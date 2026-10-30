@@ -77,18 +77,84 @@ def xlsx_template(request):
 def import_preview(request):
     if not admin_only(request.user):
         return HttpResponseForbidden('Tidak diizinkan.')
-    context = {}
+    from .students import admin_school_ids
+    from .models import School
+    from .imports import match_rows
+    schools = School.objects.filter(pk__in=admin_school_ids(request.user))
+    context = {'schools': schools}
     if request.method == 'POST':
+        request.session.pop('invoice_import_preview', None)
         uploaded = request.FILES.get('file')
-        if not uploaded or uploaded.size > MAX_BYTES or not uploaded.name.lower().endswith('.xlsx'):
+        school = schools.filter(pk=request.POST.get('school') if request.POST.get('school', '').isdigit() else None).first()
+        if not school:
+            context['error'] = 'Pilih sekolah yang menjadi lingkup akses Anda.'
+        elif not uploaded or uploaded.size > MAX_BYTES or not uploaded.name.lower().endswith('.xlsx'):
             context['error'] = 'Pilih file XLSX maksimal 2 MB.'
         else:
             try:
-                context['rows'] = preview_xlsx(uploaded.read(MAX_BYTES + 1))
+                import secrets
+                from django.utils import timezone
+                rows = match_rows(preview_xlsx(uploaded.read(MAX_BYTES + 1)), school)
+                context['rows'] = rows
+                context['school_selected'] = school
+                if rows:
+                    token = secrets.token_urlsafe(24)
+                    request.session['invoice_import_preview'] = {'school':school.pk,'rows':rows,'token':token,'created':timezone.now().isoformat()}
+                    context['commit_token'] = token
                 context['previewed'] = True
             except ImportErrorDetail as exc:
                 context['error'] = str(exc)
     return render(request, 'portal/import_preview.html', context)
+
+@login_required
+def invoice_import_commit(request):
+    import secrets
+    from datetime import datetime, timedelta
+    from django.db import IntegrityError, transaction
+    from django.http import HttpResponseBadRequest
+    from django.shortcuts import get_object_or_404, redirect
+    from django.utils import timezone
+    from .students import admin_school_ids
+    from .imports import match_rows
+    from .models import School, Invoice, ActivityEvent
+    if request.method != 'POST':
+        from django.http import HttpResponseNotAllowed
+        return HttpResponseNotAllowed(['POST'])
+    batch=request.session.get('invoice_import_preview')
+    if not batch or not secrets.compare_digest(str(request.POST.get('token','')),batch['token']):
+        return HttpResponseBadRequest('Preview tidak tersedia atau sudah digunakan.')
+    try:
+        if timezone.now() - datetime.fromisoformat(batch['created']) > timedelta(minutes=20):
+            request.session.pop('invoice_import_preview',None)
+            return HttpResponseBadRequest('Preview kedaluwarsa; unggah ulang.')
+    except (ValueError,TypeError):
+        return HttpResponseBadRequest('Preview tidak valid.')
+    school=get_object_or_404(School,pk=batch['school'],pk__in=admin_school_ids(request.user))
+    selected=request.POST.getlist('rows')
+    if not selected or len(selected)!=len(set(selected)) or any(not x.isdigit() for x in selected):
+        return HttpResponseBadRequest('Pilih baris yang valid.')
+    selected_ids={int(x) for x in selected}
+    rows=[row for row in batch['rows'] if row['row'] in selected_ids]
+    if len(rows)!=len(selected_ids) or any(row['errors'] for row in rows):
+        return HttpResponseBadRequest('Baris tidak valid; unggah ulang.')
+    try:
+        with transaction.atomic():
+            School.objects.select_for_update().get(pk=school.pk)
+            match_rows(rows,school,lock_banks=True)
+            if any(row['errors'] for row in rows):
+                return HttpResponseBadRequest('Data berubah; unggah ulang dan periksa kembali.')
+            for row in rows:
+                bank = row.get('bank_snapshot') or {}
+                Invoice.objects.create(enrollment_id=row['enrollment_id'],reference=row['reference'],
+                    description=row['description'] or row['bill_type'],amount=row['amount'],fine=row['fine'],
+                    due_date=row['due_date'],virtual_account=row['va'],imported_type=row['bill_type'],imported_period=row['period'],
+                    payment_account_id=bank.get('id'), payment_bank_name=bank.get('bank',''),
+                    payment_account_name=bank.get('name',''), payment_account_number=bank.get('number',''))
+            ActivityEvent.objects.create(school=school,actor=request.user,action='invoice_import')
+    except IntegrityError:
+        return HttpResponseBadRequest('Konflik data; tidak ada tagihan disimpan. Unggah ulang.')
+    request.session.pop('invoice_import_preview',None)
+    return redirect('dashboard')
 
 from datetime import date
 from django.db import transaction

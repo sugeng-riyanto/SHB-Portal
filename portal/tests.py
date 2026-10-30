@@ -3,13 +3,28 @@ from django.contrib.auth import get_user_model
 from django.test import TestCase, TransactionTestCase
 from django.urls import reverse
 from .models import School, Membership, AcademicYear, Classroom, Student, Enrollment, Invoice, TransferProof, Payment
+import secrets as _secrets
+TEST_PASSWORD_1 = 'pw-' + _secrets.token_urlsafe(24)
+TEST_PASSWORD_2 = 'pw-' + _secrets.token_urlsafe(24)
+TEST_PASSWORD_3 = 'pw-' + _secrets.token_urlsafe(24)
+TEST_PASSWORD_4 = 'pw-' + _secrets.token_urlsafe(24)
+TEST_PASSWORD_5 = 'pw-' + _secrets.token_urlsafe(24)
+TEST_SECRET_6 = 'sk-' + _secrets.token_urlsafe(24)
+TEST_PASSWORD_7 = 'pw-' + _secrets.token_urlsafe(24)
+TEST_PASSWORD_8 = 'pw-' + _secrets.token_urlsafe(24)
+TEST_PASSWORD_9 = 'pw-' + _secrets.token_urlsafe(24)
+TEST_PASSWORD_10 = 'pw-' + _secrets.token_urlsafe(24)
+TEST_PASSWORD_11 = 'pw-' + _secrets.token_urlsafe(24)
+TEST_PASSWORD_12 = 'pw-' + _secrets.token_urlsafe(24)
+TEST_PASSWORD_13 = 'pw-' + _secrets.token_urlsafe(24)
+
 
 class DashboardAccessTests(TestCase):
     def setUp(self):
         User = get_user_model()
-        self.guardian = User.objects.create_user(username='guardian',password='long-test-password')
-        self.teacher = User.objects.create_user(username='teacher',password='long-test-password')
-        self.other = User.objects.create_user(username='other',password='long-test-password')
+        self.guardian = User.objects.create_user(username='guardian',password=TEST_PASSWORD_3)
+        self.teacher = User.objects.create_user(username='teacher',password=TEST_PASSWORD_3)
+        self.other = User.objects.create_user(username='other',password=TEST_PASSWORD_3)
         self.school = School.objects.create(name='SHB')
         self.other_school = School.objects.create(name='Other')
         year = AcademicYear.objects.create(school=self.school,label='2026/27')
@@ -17,6 +32,7 @@ class DashboardAccessTests(TestCase):
         self.classroom.teachers.add(self.teacher)
         self.student = Student.objects.create(school=self.school,nis='001',name='ANAK SATU')
         self.student.guardians.add(self.guardian)
+        self.guardian.email='a@example.test'; self.guardian.save(update_fields=['email'])
         enrollment = Enrollment.objects.create(student=self.student,classroom=self.classroom)
         self.invoice=Invoice.objects.create(enrollment=enrollment,reference='INV-1',description='SPP',amount=500000,due_date=date(2026,11,1))
         Membership.objects.create(user=self.guardian,school=self.school,role='guardian')
@@ -44,21 +60,21 @@ class DashboardAccessTests(TestCase):
     def test_principal_and_foundation_see_only_aggregate(self):
         User = get_user_model()
         for role in ('principal', 'foundation'):
-            user = User.objects.create_user(username=role,password='long-test-password')
+            user = User.objects.create_user(username=role,password=TEST_PASSWORD_3)
             Membership.objects.create(user=user,school=self.school,role=role)
             self.client.force_login(user)
             response = self.client.get('/dashboard/')
             self.assertNotContains(response, 'ANAK SATU')
             self.assertContains(response, '500000')
     def test_wrong_school_principal_has_no_aggregate(self):
-        user = get_user_model().objects.create_user(username='otherprincipal',password='long-test-password')
+        user = get_user_model().objects.create_user(username='otherprincipal',password=TEST_PASSWORD_3)
         Membership.objects.create(user=user,school=self.other_school,role='principal')
         self.client.force_login(user)
         self.assertNotContains(self.client.get('/dashboard/'), '500000')
     def test_other_guardian_and_unassigned_teacher_cannot_see(self):
         User = get_user_model()
         for role in ('guardian', 'teacher'):
-            user = User.objects.create_user(username='unassigned-'+role,password='long-test-password')
+            user = User.objects.create_user(username='unassigned-'+role,password=TEST_PASSWORD_3)
             Membership.objects.create(user=user,school=self.school,role=role)
             self.client.force_login(user)
             self.assertNotContains(self.client.get('/dashboard/'), 'ANAK SATU')
@@ -73,7 +89,7 @@ class DashboardAccessTests(TestCase):
         self.client.force_login(self.teacher)
         self.assertNotContains(self.client.get('/dashboard/'),'CROSS SCHOOL LEAK')
     def test_admin_sees_only_own_school(self):
-        user = get_user_model().objects.create_user(username='adminshb',password='long-test-password')
+        user = get_user_model().objects.create_user(username='adminshb',password=TEST_PASSWORD_3)
         Membership.objects.create(user=user,school=self.school,role='admin')
         self.client.force_login(user)
         self.assertContains(self.client.get('/dashboard/'),'ANAK SATU')
@@ -93,17 +109,17 @@ class DashboardAccessTests(TestCase):
         from io import BytesIO
         from django.core.files.uploadedfile import SimpleUploadedFile
         from openpyxl import load_workbook
-        user = get_user_model().objects.create_user(username='admin_import',password='long-test-password')
+        user = get_user_model().objects.create_user(username='admin_import',password=TEST_PASSWORD_3)
         Membership.objects.create(user=user,school=self.school,role='admin')
         self.client.force_login(user)
         template = self.client.get('/imports/template.xlsx')
         self.assertEqual(template.status_code,200)
         book = load_workbook(BytesIO(template.content))
-        book.active.append(['001','8A','ANAK SATU','a@example.test','SPP',500000,0,'','2026/27','Oktober','2026-11-01','ref-001','','00001234'])
+        book.active.append(['001','8A','ANAK SATU','a@example.test','SPP',500000,0,'','2026/27','Oktober','2026-11-01','ref-001','',''])
         stream=BytesIO();book.save(stream)
         upload=SimpleUploadedFile('data.xlsx',stream.getvalue())
-        result=self.client.post('/imports/',{'file':upload})
-        self.assertContains(result,'Validasi awal lolos')
+        result=self.client.post('/imports/',{'file':upload,'school':self.school.pk})
+        self.assertContains(result,'Pemeriksaan awal lolos')
         self.assertContains(result,'001')
         self.assertEqual(Invoice.objects.count(),1)
     def test_formula_rejected_in_preview(self):
@@ -134,7 +150,7 @@ class DashboardAccessTests(TestCase):
         proof=TransferProof.objects.create(invoice=Invoice.objects.get(),guardian=self.guardian,reported_amount=100000,transfer_date=date(2026,10,27),image=b'x',image_type='png')
         self.client.force_login(self.teacher)
         self.assertEqual(self.client.post(f'/proofs/{proof.id}/verify/').status_code,404)
-        admin=get_user_model().objects.create_user(username='proof-admin',password='long-test-password')
+        admin=get_user_model().objects.create_user(username='proof-admin',password=TEST_PASSWORD_3)
         Membership.objects.create(user=admin,school=self.school,role='admin')
         self.client.force_login(admin)
         self.assertEqual(self.client.post(f'/proofs/{proof.id}/verify/').status_code,302)
@@ -149,19 +165,19 @@ class DashboardAccessTests(TestCase):
         self.assertEqual(TransferProof.objects.count(),0)
 
     def test_superadmin_can_manage_school_and_view_data(self):
-        user = get_user_model().objects.create_superuser(username='root-user',email='root@example.test',password='long-test-password')
+        user = get_user_model().objects.create_superuser(username='root-user',email='root@example.test',password=TEST_PASSWORD_3)
         self.client.force_login(user)
         self.assertContains(self.client.get('/dashboard/'),'ANAK SATU')
         self.assertEqual(self.client.get('/admin/portal/school/').status_code,200)
         self.assertEqual(self.client.get('/admin/portal/membership/').status_code,200)
     def test_staff_without_superuser_cannot_use_admin(self):
-        staff = get_user_model().objects.create_user(username='staff-user',password='long-test-password',is_staff=True)
+        staff = get_user_model().objects.create_user(username='staff-user',password=TEST_PASSWORD_3,is_staff=True)
         self.client.force_login(staff)
         self.assertEqual(self.client.get('/admin/portal/membership/').status_code,302)
 
     def test_integration_status_only_superuser_never_displays_secret(self):
         from unittest.mock import patch
-        root = get_user_model().objects.create_superuser(username='super-settings',email='root@example.test',password='long-test-password')
+        root = get_user_model().objects.create_superuser(username='super-settings',email='root@example.test',password=TEST_PASSWORD_3)
         with patch.dict('os.environ', {'SMTP_PASSWORD':'secret-value-for-test'}):
             self.client.force_login(root)
             response = self.client.get('/superadmin/integrations/')
@@ -172,7 +188,7 @@ class DashboardAccessTests(TestCase):
 
     def test_student_crud_scoped_to_admin_school(self):
         User=get_user_model()
-        admin=User.objects.create_user(username='student-admin',password='long-test-password')
+        admin=User.objects.create_user(username='student-admin',password=TEST_PASSWORD_3)
         Membership.objects.create(user=admin,school=self.school,role='admin')
         outsider=Student.objects.create(school=self.other_school,nis='009',name='ANAK LUAR')
         self.client.force_login(admin)
@@ -193,7 +209,7 @@ class DashboardAccessTests(TestCase):
     def test_export_escapes_formulas_and_preserves_scope(self):
         from io import BytesIO
         from openpyxl import load_workbook
-        admin=get_user_model().objects.create_user(username='export-admin',password='long-test-password')
+        admin=get_user_model().objects.create_user(username='export-admin',password=TEST_PASSWORD_3)
         Membership.objects.create(user=admin,school=self.school,role='admin')
         Student.objects.create(school=self.school,nis='00009',name='=1+1')
         Student.objects.create(school=self.other_school,nis='00010',name='PRIVATE')
@@ -208,7 +224,7 @@ class DashboardAccessTests(TestCase):
         from io import BytesIO
         from openpyxl import load_workbook
         from .models import BankAccount
-        principal=get_user_model().objects.create_user(username='bank-principal',password='long-test-password')
+        principal=get_user_model().objects.create_user(username='bank-principal',password=TEST_PASSWORD_3)
         Membership.objects.create(user=principal,school=self.school,role='principal')
         external=BankAccount.objects.create(school=self.other_school,bank_name='Other',account_name='Private',account_number='098')
         self.client.force_login(principal)
@@ -225,7 +241,7 @@ class DashboardAccessTests(TestCase):
     def test_guardian_and_admin_cannot_manage_banks(self):
         self.client.force_login(self.guardian)
         self.assertEqual(self.client.get('/banks/').status_code,404)
-        admin=get_user_model().objects.create_user(username='bank-admin',password='long-test-password')
+        admin=get_user_model().objects.create_user(username='bank-admin',password=TEST_PASSWORD_3)
         Membership.objects.create(user=admin,school=self.school,role='admin')
         self.client.force_login(admin)
         self.assertEqual(self.client.get('/banks/').status_code,404)
@@ -242,7 +258,7 @@ class DashboardAccessTests(TestCase):
         from django.core import mail
         from django.test import override_settings
         from .models import Message
-        admin=get_user_model().objects.create_user(username='mailadmin',password='long-test-password')
+        admin=get_user_model().objects.create_user(username='mailadmin',password=TEST_PASSWORD_3)
         Membership.objects.create(user=admin,school=self.school,role='admin')
         self.guardian.email='parent@example.test';self.guardian.save()
         self.client.force_login(admin)
@@ -259,7 +275,7 @@ class DashboardAccessTests(TestCase):
     def test_email_failure_and_wrong_school_recipient(self):
         from django.test import override_settings
         from .models import Message
-        admin=get_user_model().objects.create_user(username='mailadmin2',password='long-test-password')
+        admin=get_user_model().objects.create_user(username='mailadmin2',password=TEST_PASSWORD_3)
         Membership.objects.create(user=admin,school=self.other_school,role='admin')
         self.guardian.email='parent@example.test';self.guardian.save()
         self.client.force_login(admin)
@@ -291,14 +307,14 @@ class DashboardAccessTests(TestCase):
 
     def test_csrf_login_trusted_origin_and_untrusted_origin(self):
         from django.test import Client, override_settings
-        user = get_user_model().objects.create_user(username='csrfuser',password='long-test-password')
+        user = get_user_model().objects.create_user(username='csrfuser',password=TEST_PASSWORD_3)
         client = Client(enforce_csrf_checks=True)
         with override_settings(CSRF_TRUSTED_ORIGINS=['https://preview.example.test']):
             client.get('/accounts/login/')
             token = client.cookies['csrftoken'].value
-            response=client.post('/accounts/login/',{'username':user.username,'password':'long-test-password','csrfmiddlewaretoken':token},HTTP_ORIGIN='https://untrusted.example.test')
+            response=client.post('/accounts/login/',{'username':user.username,'password':TEST_PASSWORD_3,'csrfmiddlewaretoken':token},HTTP_ORIGIN='https://untrusted.example.test')
             self.assertEqual(response.status_code,403)
-            response=client.post('/accounts/login/',{'username':user.username,'password':'long-test-password','csrfmiddlewaretoken':token},HTTP_ORIGIN='https://preview.example.test')
+            response=client.post('/accounts/login/',{'username':user.username,'password':TEST_PASSWORD_3,'csrfmiddlewaretoken':token},HTTP_ORIGIN='https://preview.example.test')
             self.assertEqual(response.status_code,302)
 
     def test_demo_role_logins_and_dashboards_with_csrf(self):
@@ -322,7 +338,7 @@ class DashboardAccessTests(TestCase):
 
     def test_class_recipient_selection_deduplicates_and_isolates(self):
         from .recipients import class_recipients
-        admin=get_user_model().objects.create_user(username='bulkadmin',password='long-test-password')
+        admin=get_user_model().objects.create_user(username='bulkadmin',password=TEST_PASSWORD_3)
         Membership.objects.create(user=admin,school=self.school,role='admin')
         self.guardian.email='parent@example.test';self.guardian.save()
         second=Student.objects.create(school=self.school,nis='002',name='SECOND CHILD')
@@ -334,13 +350,13 @@ class DashboardAccessTests(TestCase):
         self.assertFalse(class_recipients(self.teacher,self.classroom.pk).exists())
 
     def test_first_login_requires_password_change_and_preserves_session(self):
-        user=get_user_model().objects.create_user(username='first',password='Old-password-987!')
-        self.assertTrue(self.client.login(username='first',password='Old-password-987!'))
+        user=get_user_model().objects.create_user(username='first',password=TEST_PASSWORD_7)
+        self.assertTrue(self.client.login(username='first',password=TEST_PASSWORD_7))
         # Actual login view provisions a first-login profile.
         self.client.logout()
-        self.client.post('/accounts/login/',{'username':'first','password':'Old-password-987!'})
+        self.client.post('/accounts/login/',{'username':'first','password':TEST_PASSWORD_7})
         self.assertRedirects(self.client.get('/dashboard/'),'/accounts/password/')
-        response=self.client.post('/accounts/password/',{'old_password':'Old-password-987!','new_password1':'Fresh-password-654!','new_password2':'Fresh-password-654!'})
+        response=self.client.post('/accounts/password/',{'old_password':TEST_PASSWORD_7,'new_password1':'Fresh-password-654!','new_password2':'Fresh-password-654!'})
         self.assertEqual(response.status_code,302)
         self.assertEqual(self.client.get('/dashboard/').status_code,200)
         user.refresh_from_db();self.assertTrue(user.check_password('Fresh-password-654!'))
@@ -378,8 +394,8 @@ class DashboardAccessTests(TestCase):
         self.client.force_login(self.guardian)
         self.assertRedirects(self.client.get('/'),'/dashboard/')
     def test_login_lands_on_dashboard_even_if_next_provided(self):
-        user=get_user_model().objects.create_user(username='landing-user',password='Old-password-987!')
-        response=self.client.post('/accounts/login/?next=/kabar-sekolah/',{'username':user.username,'password':'Old-password-987!'})
+        user=get_user_model().objects.create_user(username='landing-user',password=TEST_PASSWORD_7)
+        response=self.client.post('/accounts/login/?next=/kabar-sekolah/',{'username':user.username,'password':TEST_PASSWORD_7})
         self.assertEqual(response.status_code,302)
         self.assertEqual(response['Location'],'/dashboard/')
 
@@ -403,7 +419,7 @@ class DashboardAccessTests(TestCase):
     def test_other_guardian_cannot_edit_proof_and_verified_is_immutable(self):
         from .models import TransferProof
         proof=TransferProof.objects.create(invoice=Invoice.objects.get(),guardian=self.guardian,reported_amount=100000,transfer_date=date(2026,10,27),image=b'x',image_type='png')
-        user=get_user_model().objects.create_user(username='other-wali',password='long-test-password')
+        user=get_user_model().objects.create_user(username='other-wali',password=TEST_PASSWORD_3)
         Membership.objects.create(user=user,school=self.school,role='guardian');self.student.guardians.add(user)
         self.client.force_login(user)
         self.assertEqual(self.client.get(f'/proofs/{proof.pk}/edit/').status_code,404)
@@ -430,7 +446,7 @@ class DashboardAccessTests(TestCase):
         from cryptography.fernet import Fernet
         from unittest.mock import patch
         from .models import IntegrationConfig
-        root=get_user_model().objects.create_superuser(username='integration-root',email='root@example.test',password='long-test-password')
+        root=get_user_model().objects.create_superuser(username='integration-root',email='root@example.test',password=TEST_PASSWORD_3)
         self.client.force_login(root)
         key=Fernet.generate_key().decode()
         with patch.dict('os.environ', {'SHB_INTEGRATION_ENCRYPTION_KEY':key}):
@@ -451,7 +467,7 @@ class DashboardAccessTests(TestCase):
     def test_integration_missing_encryption_key_does_not_save(self):
         from unittest.mock import patch
         from .models import IntegrationConfig
-        root=get_user_model().objects.create_superuser(username='nokey',email='root@example.test',password='long-test-password')
+        root=get_user_model().objects.create_superuser(username='nokey',email='root@example.test',password=TEST_PASSWORD_3)
         self.client.force_login(root)
         with patch.dict('os.environ', {'SHB_INTEGRATION_ENCRYPTION_KEY':''}):
             response=self.client.post('/superadmin/integrations/smtp/',{'host':'smtp.gmail.com','port':'587','username':'school@example.test','from_email':'school@example.test','app_password':'secret'})
@@ -459,7 +475,7 @@ class DashboardAccessTests(TestCase):
         self.assertFalse(IntegrationConfig.objects.exists())
 
     def test_superadmin_branding_and_local_assets(self):
-        root=get_user_model().objects.create_superuser(username='styled-admin',email='root@example.test',password='long-test-password')
+        root=get_user_model().objects.create_superuser(username='styled-admin',email='root@example.test',password=TEST_PASSWORD_3)
         self.client.force_login(root)
         response=self.client.get('/admin/')
         self.assertContains(response,'SHB Portal')
@@ -467,22 +483,11 @@ class DashboardAccessTests(TestCase):
         self.assertContains(response,'/superadmin/integrations/')
         self.assertNotContains(response,'cdn.')
 
-    def test_superadmin_secret_reveal_requires_password_and_scope(self):
-        from cryptography.fernet import Fernet
-        from unittest.mock import patch
-        from .models import IntegrationConfig
-        import json
-        key=Fernet.generate_key();root=get_user_model().objects.create_superuser(username='reveal-root',email='root@example.test',password='strong-password-987!')
-        IntegrationConfig.objects.create(provider='smtp',encrypted_secrets=Fernet(key).encrypt(json.dumps({'app_password':'private-secret-value'}).encode()))
-        with patch.dict('os.environ',{'SHB_INTEGRATION_ENCRYPTION_KEY':key.decode()}):
-            self.client.force_login(root)
-            self.assertNotContains(self.client.get('/superadmin/integrations/smtp/reveal/'),'private-secret-value')
-            self.assertNotContains(self.client.post('/superadmin/integrations/smtp/reveal/',{'password':'wrong'}),'private-secret-value')
-            response=self.client.post('/superadmin/integrations/smtp/reveal/',{'password':'strong-password-987!'})
-            self.assertContains(response,'private-secret-value')
-            self.assertIn('no-store',response['Cache-Control'])
-            self.client.force_login(self.guardian)
-            self.assertEqual(self.client.get('/superadmin/integrations/smtp/reveal/').status_code,404)
+    def test_secret_reveal_endpoint_is_not_available(self):
+        root=get_user_model().objects.create_superuser(username='reveal-root',email='root@example.test',password=TEST_PASSWORD_2)
+        self.client.force_login(root)
+        self.assertEqual(self.client.get('/superadmin/integrations/smtp/reveal/').status_code,404)
+        self.assertEqual(self.client.post('/superadmin/integrations/smtp/reveal/',{'password':TEST_PASSWORD_2}).status_code,404)
 
     def test_proof_upload_form_contains_csrf_and_accepts_valid_token(self):
         from io import BytesIO
@@ -501,7 +506,7 @@ class DashboardAccessTests(TestCase):
         invoice=Invoice.objects.get()
         p1=TransferProof.objects.create(invoice=invoice,guardian=self.guardian,reported_amount=100000,transfer_date=date(2026,10,27),image=b'x',image_type='png')
         p2=TransferProof.objects.create(invoice=invoice,guardian=self.guardian,reported_amount=500000,transfer_date=date(2026,10,27),image=b'x',image_type='png')
-        admin=get_user_model().objects.create_user(username='bulk-proof',password='long-test-password')
+        admin=get_user_model().objects.create_user(username='bulk-proof',password=TEST_PASSWORD_3)
         Membership.objects.create(user=admin,school=self.school,role='admin')
         self.client.force_login(self.other)
         self.assertEqual(self.client.post('/proofs/bulk-verify/',{'proof_ids':[p1.pk]}).status_code,400)
@@ -519,7 +524,7 @@ class DashboardAccessTests(TestCase):
         self.assertEqual(self.client.post(f'/proofs/{proof.pk}/comments/',{'body':'Mohon diperiksa'}).status_code,302)
         self.client.force_login(self.teacher)
         self.assertEqual(self.client.get(f'/proofs/{proof.pk}/comments/').status_code,404)
-        admin=get_user_model().objects.create_user(username='comment-admin',password='long-test-password')
+        admin=get_user_model().objects.create_user(username='comment-admin',password=TEST_PASSWORD_3)
         Membership.objects.create(user=admin,school=self.school,role='admin')
         self.client.force_login(admin)
         self.assertContains(self.client.get(f'/proofs/{proof.pk}/comments/'),'Mohon diperiksa')
@@ -555,7 +560,7 @@ class DashboardAccessTests(TestCase):
 
     def test_payment_types_defaults_crud_and_scope(self):
         from .models import PaymentType,ActivityEvent
-        admin=get_user_model().objects.create_user(username='types-admin',password='long-test-password')
+        admin=get_user_model().objects.create_user(username='types-admin',password=TEST_PASSWORD_3)
         Membership.objects.create(user=admin,school=self.school,role='admin')
         self.client.force_login(admin)
         self.assertEqual(self.client.post('/payment-types/defaults/',{'school':self.school.pk}).status_code,302)
@@ -596,8 +601,8 @@ class DashboardAccessTests(TestCase):
 
     def test_superadmin_and_school_admin_dashboard_are_distinct(self):
         User=get_user_model()
-        root=User.objects.create_superuser(username='dash-super',email='root@example.test',password='long-test-password')
-        admin=User.objects.create_user(username='dash-admin',password='long-test-password')
+        root=User.objects.create_superuser(username='dash-super',email='root@example.test',password=TEST_PASSWORD_3)
+        admin=User.objects.create_user(username='dash-admin',password=TEST_PASSWORD_3)
         Membership.objects.create(user=admin,school=self.school,role='admin')
         self.client.force_login(root)
         response=self.client.get('/dashboard/')
@@ -616,7 +621,7 @@ class DashboardAccessTests(TestCase):
         from .models import TransferProof,PaymentReceipt
         invoice=Invoice.objects.get()
         proof=TransferProof.objects.create(invoice=invoice,guardian=self.guardian,reported_amount=200000,transfer_date=date(2026,10,27),image=b'x',image_type='png')
-        admin=get_user_model().objects.create_user(username='receipt-admin',password='long-test-password')
+        admin=get_user_model().objects.create_user(username='receipt-admin',password=TEST_PASSWORD_3)
         Membership.objects.create(user=admin,school=self.school,role='admin')
         self.client.force_login(admin)
         self.assertEqual(self.client.post(f'/proofs/{proof.pk}/verify/').status_code,302)
@@ -649,8 +654,8 @@ class DashboardAccessTests(TestCase):
 
     def test_school_announcement_workflow_and_qr_scope(self):
         from .models import SchoolAnnouncement
-        admin=get_user_model().objects.create_user(username='announce-admin',password='long-test-password')
-        principal=get_user_model().objects.create_user(username='announce-principal',password='long-test-password')
+        admin=get_user_model().objects.create_user(username='announce-admin',password=TEST_PASSWORD_3)
+        principal=get_user_model().objects.create_user(username='announce-principal',password=TEST_PASSWORD_3)
         Membership.objects.create(user=admin,school=self.school,role='admin')
         Membership.objects.create(user=principal,school=self.school,role='principal')
         self.client.force_login(admin)
@@ -669,7 +674,7 @@ class DashboardAccessTests(TestCase):
         self.assertEqual(self.client.get(f'/announcements/verify/{item.approval_reference}/').status_code,404)
         self.assertEqual(self.client.post(f'/announcements/{item.pk}/delete/').status_code,404)
     def test_announcement_rejects_non_https_pdf(self):
-        admin=get_user_model().objects.create_user(username='announce-admin2',password='long-test-password')
+        admin=get_user_model().objects.create_user(username='announce-admin2',password=TEST_PASSWORD_3)
         Membership.objects.create(user=admin,school=self.school,role='admin')
         self.client.force_login(admin)
         response=self.client.post('/announcements/new/',{'school':self.school.pk,'title':'Activity','body':'Text','event_date':'2026-11-20','pdf_url':'http://example.test/a.pdf'})
@@ -678,7 +683,7 @@ class DashboardAccessTests(TestCase):
     def test_announcement_actions_require_and_accept_csrf_tokens(self):
         from django.test import Client, override_settings
         from .models import SchoolAnnouncement
-        user=get_user_model().objects.create_user(username='csrf-announcement',password='test-password-987!')
+        user=get_user_model().objects.create_user(username='csrf-announcement',password=TEST_PASSWORD_4)
         Membership.objects.create(user=user,school=self.school,role='admin')
         client=Client(enforce_csrf_checks=True);client.force_login(user)
         origin='https://pv-ac9ad268c614-51b1306d-b202-4d34-b04b-346824493b23.style.dev'
@@ -697,7 +702,7 @@ class DashboardAccessTests(TestCase):
         from io import BytesIO
         from django.core.files.uploadedfile import SimpleUploadedFile
         from openpyxl import load_workbook
-        admin=get_user_model().objects.create_user(username='xlsx-students-admin',password='long-test-password')
+        admin=get_user_model().objects.create_user(username='xlsx-students-admin',password=TEST_PASSWORD_3)
         Membership.objects.create(user=admin,school=self.school,role='admin')
         self.client.force_login(admin)
         template=self.client.get('/students/template.xlsx');self.assertEqual(template.status_code,200)
@@ -715,7 +720,7 @@ class DashboardAccessTests(TestCase):
         from io import BytesIO
         from django.core.files.uploadedfile import SimpleUploadedFile
         from openpyxl import load_workbook
-        admin=get_user_model().objects.create_user(username='xlsx-isolated',password='long-test-password')
+        admin=get_user_model().objects.create_user(username='xlsx-isolated',password=TEST_PASSWORD_3)
         Membership.objects.create(user=admin,school=self.school,role='admin')
         self.client.force_login(admin)
         book=load_workbook(BytesIO(self.client.get('/students/template.xlsx').content));book.active.append([123,'Student'])
@@ -731,7 +736,7 @@ class DashboardAccessTests(TestCase):
         # Guardianship (student.guardians) is school-agnostic, so a linked guardian who is
         # only a member of another school can own a proof on a SHB invoice. School scope
         # must still deny, and the control below proves the 404 came from school scope.
-        user=get_user_model().objects.create_user(username='cross-school-guardian',password='long-test-password')
+        user=get_user_model().objects.create_user(username='cross-school-guardian',password=TEST_PASSWORD_3)
         self.student.guardians.add(user)
         Membership.objects.create(user=user,school=self.other_school,role='guardian')
         proof=TransferProof.objects.create(invoice=self.invoice,guardian=user,reported_amount=100000,transfer_date=date(2026,10,27),image=b'x',image_type='png')
@@ -779,7 +784,7 @@ class DashboardAccessTests(TestCase):
     def test_same_school_staff_cannot_edit_or_withdraw_but_admin_can_verify(self):
         # The class teacher and the school admin can read or verify this proof, so the 404s
         # below pin the edit/withdraw right to the owning guardian rather than to any role.
-        admin=get_user_model().objects.create_user(username='school-admin-proofs',password='long-test-password')
+        admin=get_user_model().objects.create_user(username='school-admin-proofs',password=TEST_PASSWORD_3)
         Membership.objects.create(user=admin,school=self.school,role='admin')
         proof=TransferProof.objects.create(invoice=self.invoice,guardian=self.guardian,reported_amount=100000,transfer_date=date(2026,10,27),image=b'x',image_type='png')
         for user in (self.teacher,admin):
@@ -837,8 +842,8 @@ class SeedDemoCommandTests(TestCase):
         counts=(School.objects.count(),Student.objects.count(),Invoice.objects.count(),Membership.objects.count(),Enrollment.objects.count())
         self.assertEqual(counts,(1,3,3,5,3))
     def test_seed_uses_given_password(self):
-        self.seed(password='another-demo-password')
-        self.assertTrue(self.client.login(username='ortu@shb.sch.id',password='another-demo-password'))
+        self.seed(password=TEST_PASSWORD_1)
+        self.assertTrue(self.client.login(username='ortu@shb.sch.id',password=TEST_PASSWORD_1))
     def test_seed_refuses_production(self):
         from io import StringIO
         from django.core.management import call_command
@@ -864,12 +869,12 @@ class ConcurrentProofVerificationTests(TransactionTestCase):
         self.school=School.objects.create(name='SHB Concurrent')
         year=AcademicYear.objects.create(school=self.school,label='2026/27')
         classroom=Classroom.objects.create(year=year,name='9A')
-        guardian=User.objects.create_user(username='concurrent-guardian',password='long-test-password')
+        guardian=User.objects.create_user(username='concurrent-guardian',password=TEST_PASSWORD_3)
         student=Student.objects.create(school=self.school,nis='900',name='ANAK KONKUREN')
         student.guardians.add(guardian)
         enrollment=Enrollment.objects.create(student=student,classroom=classroom)
         self.invoice=Invoice.objects.create(enrollment=enrollment,reference='INV-CONCURRENT',description='SPP',amount=200000,due_date=date(2026,11,1))
-        self.admin=User.objects.create_user(username='concurrent-admin',password='long-test-password')
+        self.admin=User.objects.create_user(username='concurrent-admin',password=TEST_PASSWORD_3)
         Membership.objects.create(user=self.admin,school=self.school,role='admin')
         self.proof=TransferProof.objects.create(invoice=self.invoice,guardian=guardian,reported_amount=100000,transfer_date=date(2026,10,27),image=b'x',image_type='png')
     def test_two_simultaneous_verifications_create_one_payment(self):

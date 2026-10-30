@@ -60,3 +60,11 @@ proofBoxes.forEach(box => box.addEventListener('change', updateProofTotal));
   else if (narrow.addListener) narrow.addListener(applyLayout);
   applyLayout();
 })();
+(() => {
+  document.querySelectorAll('.sidebar-links a').forEach((link) => {
+    if (link.pathname === window.location.pathname) {
+      link.classList.add('side-current');
+      link.setAttribute('aria-current', 'page');
+    }
+  });
+})();
