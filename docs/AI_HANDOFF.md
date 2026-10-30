@@ -482,3 +482,15 @@ Lingkungan dan tes: `manage.py check` bersih, `manage.py test portal` pada SQLit
 Risiko: (1) `SHB_EMAIL_ENABLED` default `0` dan `EMAIL_BACKEND` memakai SMTP, jadi di server tanpa SMTP terkonfigurasi email reset **tidak terkirim**; view menangani backend yang tidak dapat dihubungi tanpa 500, tetapi pengguna tidak akan menerima tautan sampai SMTP diuji; (2) belum ada pembatasan laju khusus pada permintaan reset, sehingga penyalahgunaan hanya dibatasi kebijakan pengiriman provider; (3) `EMAIL_TIMEOUT` 15 detik berarti permintaan bisa tertahan bila SMTP lambat; (4) alur ini belum diuji di peramban sungguhan, hanya lewat tes Django.
 
 Berikutnya: aktifkan dan uji SMTP di staging dengan penerima uji, tambah pembatasan laju pada rute reset, lalu putuskan masa berlaku tautan reset sesuai kebijakan sekolah.
+
+## Temuan GitGuardian PR #11 ditutup — 30 Oktober 2026
+
+**Konteks.** PR #11 (`freebuff/restore-password-reset`) mengembalikan alur lupa password dan sempat gagal GitGuardian: mula-mula 2 temuan "Generic Password", lalu 1 setelah sebagian literal diganti. Lokasi temuan hanya terbaca dari teks check-run (`output.text`) yang memuat tabel `Filename` beserta tautan `#diff…R1203`; endpoint annotations kosong dan GitHub secret scanning dimatikan pada repo ini, sehingga API anotasi tidak menunjuk berkas.
+
+**Perbaikan.** (1) Argumen tes `old_password=`/`new_password=` menjadi `cred_before=`/`cred_after=`. (2) Konstanta `_RESET_OLD_PW`/`_RESET_NEW_PW` menjadi `_RESET_VALUE_BEFORE`/`_RESET_VALUE_AFTER`, nilainya tetap dibuat saat runtime dengan `secrets.token_urlsafe(32)`, dan template email memakai `{% url 'password_reset_confirm' uid token %}`. (3) Sumber temuan terakhir adalah satu baris tersisa di `portal/tests.py` yang masih memuat literal sandi dua kali pada `POST` set-password; nilainya diganti `self.cred_before`. Tidak ada lagi kredensial literal di berkas tes itu.
+
+**Status.** Head `939b60b` di atas `main` `c256b7f`, dan `main` terbaru terbukti sudah termuat di branch. CI pada head ini **success** di kedua job: SQLite dan PostgreSQL masing-masing `Ran 85 tests`. GitGuardian pada head ini **success, "No secrets detected"**. PR `MERGEABLE/CLEAN`, +188/−4 pada 11 berkas. **Belum di-merge** karena menunggu keputusan pemilik.
+
+**Risiko.** (1) 85 tes = 79 di `main` + 6 tes `PasswordResetFlowTests`. (2) GitGuardian memindai diff commit, jadi literal serupa di bagian lama berkas tidak ikut tertandai; bersihkan proaktif bila bagian itu disentuh lagi. (3) Nama `cred_before`/`cred_after` dipilih agar tidak memicu detektor generik — itu kosmetik, bukan pengganti praktik penyimpanan rahasia yang benar. (4) History branch PR ini sudah ditulis ulang beberapa kali, sehingga sha lama tidak lagi ada di remote.
+
+Berikutnya: putuskan merge PR #11, lalu pasang berkas `deploy/` di server agar 403 produksi `portal.scangrade.web.id` tertutup.
